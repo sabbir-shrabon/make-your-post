@@ -1,3 +1,4 @@
+import chroma from "chroma-js"
 import type {
   BackgroundAsset,
   FontAsset,
@@ -14,6 +15,7 @@ const VALID_LAYER_TYPES = new Set(["text", "logo", "overlay", "shape", "divider"
 const VALID_ROLES = new Set(["headline", "subheadline", "body"])
 const VALID_ALIGNS = new Set(["left", "center", "right"])
 const VALID_WEIGHTS = new Set(["bold", "regular"])
+const VALID_TEXTURES = new Set(["none", "noise", "dot-grid", "diagonal-stripes"])
 
 function pctError(path: string, field: string, value: unknown): ValidationError | null {
   const n = Number(value)
@@ -28,6 +30,7 @@ function validateLayer(
   index: number,
   backgroundIds: Set<string>,
   fontIds: Set<string>,
+  backgroundColor?: string | null,
 ): ValidationError[] {
   const errors: ValidationError[] = []
   const prefix = `layers[${index}]`
@@ -89,6 +92,22 @@ function validateLayer(
         message: `Layer ${layerNum}: at least one color_option required`,
       })
     }
+    colorOpts.forEach((co, ci) => {
+      const color = String((co as Record<string, unknown>)?.color_hex ?? "")
+      if (!chroma.valid(color)) {
+        errors.push({
+          path: `${prefix}.color_options[${ci}].color_hex`,
+          message: `Layer ${layerNum}: text color must be a valid hex color`,
+        })
+        return
+      }
+      if (backgroundColor && chroma.valid(backgroundColor) && chroma.contrast(color, backgroundColor) < 4.5) {
+        errors.push({
+          path: `${prefix}.color_options[${ci}].color_hex`,
+          message: `Layer ${layerNum}: text color needs at least 4.5:1 contrast against the preview background`,
+        })
+      }
+    })
     const aligns = (layer.text_align_options as unknown[]) ?? []
     if (!aligns.length) {
       errors.push({
@@ -258,6 +277,15 @@ export function validateTemplateJson(
   if (!obj.aspect_ratio || typeof obj.aspect_ratio !== "string") {
     errors.push({ path: "aspect_ratio", message: "aspect_ratio is required" })
   }
+  if (
+    obj.background_texture !== undefined &&
+    !VALID_TEXTURES.has(String(obj.background_texture))
+  ) {
+    errors.push({
+      path: "background_texture",
+      message: "background_texture must be none, noise, dot-grid, or diagonal-stripes",
+    })
+  }
 
   const bgOpts = (obj.background_options as unknown[]) ?? []
   if (!Array.isArray(bgOpts) || bgOpts.length < 1) {
@@ -287,6 +315,9 @@ export function validateTemplateJson(
     errors.push({ path: "layers", message: "layers must be an array" })
   } else {
     const ids = new Set<string>()
+    const firstBgId = String((bgOpts[0] as Record<string, unknown> | undefined)?.asset_id ?? "")
+    const firstBg = backgrounds.find((b) => b.id === firstBgId)
+    const backgroundColor = String(firstBg?.value_json?.color_hex ?? "")
     layers.forEach((layer, index) => {
       if (!layer || typeof layer !== "object") {
         errors.push({ path: `layers[${index}]`, message: `Layer ${index + 1}: must be an object` })
@@ -297,7 +328,7 @@ export function validateTemplateJson(
         errors.push({ path: `layers[${index}].id`, message: `Duplicate layer id: ${lid}` })
       }
       if (lid) ids.add(lid)
-      errors.push(...validateLayer(layer as Record<string, unknown>, index, bgIds, fontIds))
+      errors.push(...validateLayer(layer as Record<string, unknown>, index, bgIds, fontIds, backgroundColor))
     })
   }
 
@@ -337,3 +368,6 @@ export function layerLabel(layer: TemplateLayer): string {
   if (layer.type === "text") return `${layer.role} (${layer.id})`
   return `${layer.type} (${layer.id})`
 }
+
+
+

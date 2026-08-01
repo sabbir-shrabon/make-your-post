@@ -338,6 +338,8 @@ class AIPersona(Base):
     learning_mode_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     minimum_engagement_threshold: Mapped[float] = mapped_column(Numeric(10, 4), default=0, nullable=False)
     learned_patterns_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brand_palette_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    brand_font_pair_id: Mapped[str | None] = mapped_column(String, nullable=True)
     performance_score: Mapped[float] = mapped_column(Numeric(8, 4), default=0.5, nullable=False)
     total_posts_published: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_likes_received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

@@ -19,6 +19,7 @@ export function createEmptyTemplateJson(aspect: AspectKey = "1:1"): ManualTempla
     canvas_height: preset.height,
     aspect_ratio: aspect,
     background_options: [],
+    background_texture: "none",
     layers: [],
   }
 }
@@ -177,6 +178,37 @@ export function createDefaultShapeLayer(z: number, id: string): TemplateLayer {
   }
 }
 
+export function createDefaultIconLayer(z: number, id: string): TemplateLayer {
+  return {
+    id,
+    type: "icon",
+    z_index: z,
+    position_x_percent: 20,
+    position_y_percent: 20,
+    width_percent: 16,
+    height_percent: 16,
+    rotation_degrees: 0,
+    icon_name: "mdi:star",
+    icon_color_hex: "#ffffff",
+  }
+}
+
+export function createDefaultEmojiLayer(z: number, id: string): TemplateLayer {
+  return {
+    id,
+    type: "emoji",
+    z_index: z,
+    position_x_percent: 20,
+    position_y_percent: 20,
+    width_percent: 16,
+    height_percent: 16,
+    rotation_degrees: 0,
+    emoji: "✨",
+    emoji_svg_url: "https://twemoji.maxcdn.com/v/latest/svg/2728.svg",
+    emoji_color_hex: "#ffffff",
+  }
+}
+
 export function createDefaultDividerLayer(z: number, id: string): DividerLayer {
   return {
     id,
@@ -221,10 +253,27 @@ export function apiTemplateJson(state: TemplateState): ManualTemplateJson {
 }
 
 export function backgroundSwatchStyle(asset: {
-  asset_type: string
-  value_json: Record<string, unknown>
+  asset_type?: string
+  value_json?: Record<string, unknown>
+  preview_url?: string | null
+  config?: Record<string, unknown>
 }): CSSProperties {
-  const v = asset.value_json || {}
+  const v = (asset.value_json || asset.config || {}) as Record<string, unknown>
+  const imageUrl =
+    typeof asset.preview_url === "string" && asset.preview_url.trim()
+      ? asset.preview_url
+      : typeof (v as { url?: unknown }).url === "string" && (v as { url: string }).url.trim()
+        ? (v as { url: string }).url
+        : null
+
+  if (imageUrl) {
+    return {
+      backgroundImage: `url(${imageUrl})`,
+      backgroundSize: "cover",
+      backgroundPosition: "center",
+    }
+  }
+
   if (asset.asset_type === "gradient" && Array.isArray(v.stops)) {
     return { background: `linear-gradient(135deg, ${(v.stops as string[]).join(", ")})` }
   }
@@ -267,3 +316,4 @@ export function snapPercent(value: number, gridEnabled: boolean, step = 5): numb
   if (!gridEnabled) return Math.round(value * 10) / 10
   return Math.round(value / step) * step
 }
+

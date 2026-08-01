@@ -77,7 +77,7 @@ export type DividerLayer = LayerBase & {
 
 export type ShapeLayer = LayerBase & {
   type: "shape"
-  shape_type: "rectangle" | "circle" | "pill"
+  shape_type: "rectangle" | "circle" | "pill" | "line"
   fill_color_options: ColorOption[]
   stroke_color_options?: ColorOption[]
   stroke_width?: number
@@ -85,18 +85,48 @@ export type ShapeLayer = LayerBase & {
   opacity?: number
 }
 
-export type TemplateLayer = TextLayer | OverlayLayer | LogoLayer | ShapeLayer | DividerLayer
+export type IconLayer = LayerBase & {
+  type: "icon"
+  icon_name: string
+  icon_color_hex?: string
+}
+
+export type EmojiLayer = LayerBase & {
+  type: "emoji"
+  emoji: string
+  emoji_svg_url?: string
+  emoji_color_hex?: string
+}
+
+export type ImageLayer = LayerBase & {
+  type: "image"
+  image_url: string
+  alt?: string
+}
+
+export type TemplateLayer =
+  | TextLayer
+  | OverlayLayer
+  | LogoLayer
+  | ShapeLayer
+  | DividerLayer
+  | IconLayer
+  | EmojiLayer
+  | ImageLayer
 
 export type BackgroundOption = {
   asset_id: string
   label: string
 }
 
+export type BackgroundTexture = "none" | "noise" | "dot-grid" | "diagonal-stripes"
+
 export type ManualTemplateJson = {
   canvas_width: number
   canvas_height: number
   aspect_ratio: string
   background_options: BackgroundOption[]
+  background_texture?: BackgroundTexture
   layers: TemplateLayer[]
 }
 
@@ -120,3 +150,4 @@ export type TemplateState = {
   previewBackgroundColor?: string | null
   previewBackgroundImageBase64?: string | null
 }
+

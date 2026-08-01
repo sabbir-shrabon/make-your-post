@@ -14,9 +14,10 @@ import { cn } from "@/lib/utils"
 export type DescribeGenerateResult = {
   template_json: ManualTemplateJson
   suggested_name: string
-  aspect_ratio: string
-  canvas_width: number
-  canvas_height: number
+  layout_id: string
+  font_pair_id: string
+  palette_id: string
+  background_texture?: string
 }
 
 type Props = {
@@ -55,7 +56,7 @@ export function TemplateDescribeTab({
     setGenerating(true)
     try {
       const res = await api.post<DescribeGenerateResult>(
-        "/api/image-templates/generate-from-description",
+        "/api/ai/auto-design",
         {
           description: description.trim(),
           canvas_aspect_ratio: aspectRatio,

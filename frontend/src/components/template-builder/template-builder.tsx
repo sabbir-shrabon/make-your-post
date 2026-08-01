@@ -64,15 +64,15 @@ export function TemplateBuilder({ onCancel, onSaved }: Props) {
 
   function handleGenerated(result: DescribeGenerateResult) {
     const aspect = (
-      result.aspect_ratio in ASPECT_PRESETS ? result.aspect_ratio : "1:1"
+      result.template_json.aspect_ratio in ASPECT_PRESETS ? result.template_json.aspect_ratio : "1:1"
     ) as AspectKey
     setState((s) => {
       const next = applyTemplateJsonToState(s, result.template_json, result.suggested_name)
       return {
         ...next,
         aspectRatio: aspect,
-        canvasWidth: result.canvas_width,
-        canvasHeight: result.canvas_height,
+        canvasWidth: result.template_json.canvas_width,
+        canvasHeight: result.template_json.canvas_height,
         previewBackgroundAssetId:
           result.template_json.background_options[0]?.asset_id ?? s.previewBackgroundAssetId,
       }

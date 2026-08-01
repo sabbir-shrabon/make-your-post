@@ -1,0 +1,130 @@
+[
+  {
+    "id": "sunset-energy",
+    "mood": ["energetic", "warm", "promotional"],
+    "background": { "type": "gradient", "from": "#FF6B35", "to": "#F72585", "angle_deg": 135 },
+    "text_on_dark": "#FFFFFF",
+    "text_on_light": "#1A1A1A",
+    "accent": "#FFD60A"
+  },
+  {
+    "id": "ink-sun",
+    "mood": ["bold", "high-contrast", "promo"],
+    "background": { "type": "solid", "hex": "#0E1116" },
+    "text_on_dark": "#F8C630",
+    "text_on_light": "#0E1116",
+    "accent": "#F8C630"
+  },
+  {
+    "id": "cream-berry",
+    "mood": ["warm", "sweet", "food"],
+    "background": { "type": "gradient", "from": "#FFF4E6", "to": "#F5E0C2", "angle_deg": 0 },
+    "text_on_dark": "#FFF4E6",
+    "text_on_light": "#B0004F",
+    "accent": "#B0004F"
+  },
+  {
+    "id": "midnight-mint",
+    "mood": ["modern", "fresh", "tech"],
+    "background": { "type": "solid", "hex": "#111827" },
+    "text_on_dark": "#F9FAFB",
+    "text_on_light": "#111827",
+    "accent": "#2DD4BF"
+  },
+  {
+    "id": "paper-tomato",
+    "mood": ["friendly", "energetic", "retail"],
+    "background": { "type": "solid", "hex": "#FAF7F0" },
+    "text_on_dark": "#FAF7F0",
+    "text_on_light": "#1D1D1F",
+    "accent": "#E63946"
+  },
+  {
+    "id": "forest-lime",
+    "mood": ["natural", "fresh", "organic"],
+    "background": { "type": "gradient", "from": "#12372A", "to": "#18503C", "angle_deg": 45 },
+    "text_on_dark": "#F7FFE5",
+    "text_on_light": "#12372A",
+    "accent": "#D9ED92"
+  },
+  {
+    "id": "cobalt-coral",
+    "mood": ["playful", "bright", "social"],
+    "background": { "type": "solid", "hex": "#1446A0" },
+    "text_on_dark": "#FFFFFF",
+    "text_on_light": "#1446A0",
+    "accent": "#FF6B6B"
+  },
+  {
+    "id": "charcoal-lilac",
+    "mood": ["premium", "soft", "beauty"],
+    "background": { "type": "gradient", "from": "#202124", "to": "#303236", "angle_deg": 90 },
+    "text_on_dark": "#D8B4FE",
+    "text_on_light": "#202124",
+    "accent": "#D8B4FE"
+  },
+  {
+    "id": "white-emerald",
+    "mood": ["clean", "trustworthy", "wellness"],
+    "background": { "type": "solid", "hex": "#FFFFFF" },
+    "text_on_dark": "#FFFFFF",
+    "text_on_light": "#10231B",
+    "accent": "#10B981"
+  },
+  {
+    "id": "plum-gold",
+    "mood": ["luxury", "rich", "celebration"],
+    "background": { "type": "solid", "hex": "#3B0A45" },
+    "text_on_dark": "#FFF8E7",
+    "text_on_light": "#3B0A45",
+    "accent": "#D4AF37"
+  },
+  {
+    "id": "sky-navy",
+    "mood": ["calm", "professional", "clear"],
+    "background": { "type": "gradient", "from": "#E0F2FE", "to": "#BAE6FD", "angle_deg": 180 },
+    "text_on_dark": "#E0F2FE",
+    "text_on_light": "#0F172A",
+    "accent": "#0284C7"
+  },
+  {
+    "id": "black-neon",
+    "mood": ["edgy", "urgent", "nightlife"],
+    "background": { "type": "solid", "hex": "#050505" },
+    "text_on_dark": "#F5F5F5",
+    "text_on_light": "#050505",
+    "accent": "#A3E635"
+  },
+  {
+    "id": "rose-espresso",
+    "mood": ["romantic", "crafted", "cafe"],
+    "background": { "type": "solid", "hex": "#FFE4E6" },
+    "text_on_dark": "#FFE4E6",
+    "text_on_light": "#351B1A",
+    "accent": "#BE123C"
+  },
+  {
+    "id": "teal-orange",
+    "mood": ["active", "balanced", "event"],
+    "background": { "type": "gradient", "from": "#0F766E", "to": "#0D9488", "angle_deg": 135 },
+    "text_on_dark": "#FFFFFF",
+    "text_on_light": "#0F766E",
+    "accent": "#FB923C"
+  },
+  {
+    "id": "lavender-graphite",
+    "mood": ["creative", "polished", "studio"],
+    "background": { "type": "solid", "hex": "#EEE7FF" },
+    "text_on_dark": "#EEE7FF",
+    "text_on_light": "#24212B",
+    "accent": "#7C3AED"
+  },
+  {
+    "id": "sand-indigo",
+    "mood": ["artisanal", "confident", "market"],
+    "background": { "type": "gradient", "from": "#F3E8C9", "to": "#E8D5A5", "angle_deg": 45 },
+    "text_on_dark": "#F3E8C9",
+    "text_on_light": "#211C12",
+    "accent": "#4338CA"
+  }
+]

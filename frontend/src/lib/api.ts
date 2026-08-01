@@ -28,7 +28,7 @@ RESPONSE INTERCEPTORS (this file):
 
 import { isAxiosError } from "axios"
 import { axiosInstance, TOKEN_STORAGE_KEY } from "./axios"
-import { getBackendUrl } from "./env"
+import { getBackendUrl, shouldShowColdStartOverlay } from "./env"
 
 // Re-export helpers so consumers can import from a single place
 export { axiosInstance as api }
@@ -80,7 +80,9 @@ axiosInstance.interceptors.response.use(
     if (typeof window !== "undefined") {
       const timer = (response.config as any)._coldStartTimer
       if (timer) window.clearTimeout(timer)
-      window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: false }))
+      if (shouldShowColdStartOverlay(response.config?.baseURL || getBackendUrl())) {
+        window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: false }))
+      }
     }
 
     // Token refresh: if the backend issued a new token, store it and update
@@ -99,9 +101,14 @@ axiosInstance.interceptors.response.use(
     if (typeof window !== "undefined") {
       const timer = (error.config as any)?._coldStartTimer
       if (timer) window.clearTimeout(timer)
-      window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: false }))
+      if (shouldShowColdStartOverlay(error.config?.baseURL || getBackendUrl())) {
+        window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: false }))
+      }
 
-      if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+      if (
+        shouldShowColdStartOverlay(error.config?.baseURL || getBackendUrl()) &&
+        (error.code === "ECONNABORTED" || error.message?.includes("timeout"))
+      ) {
         window.dispatchEvent(new CustomEvent("backend-timeout"))
       }
     }

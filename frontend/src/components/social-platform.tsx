@@ -112,6 +112,8 @@ type AIPersona = {
   template_reference_image_url?: string | null
   total_posts_published?: number
   learned_patterns_summary?: string | null
+  brand_palette_id?: string | null
+  brand_font_pair_id?: string | null
 }
 
 type PromptStudioConfig = {
@@ -164,7 +166,8 @@ type DashboardIntelligence = {
   learned_insights: {
     best_post?: { id: number; content: string; score: number; insight: string } | null
     best_time_slot?: { slot: string; score: number; insight: string } | null
-    best_persona?: { id: number; name: string; score: number; insight: string } | null
+
+    best_persona?: { id: number; name: string; score: number; insight: string } | null
   }
   action_items: { id: string; text: string; action_label: string; href: string; priority: string }[]
   warnings: { level: "red" | "amber"; text: string; href: string }[]
@@ -1163,6 +1166,8 @@ function emptyPersona(): AIPersona {
     template_logo_url: null,
     template_layers_json: null,
     template_reference_image_url: null,
+    brand_palette_id: null,
+    brand_font_pair_id: null,
   }
 }
 
@@ -1930,12 +1935,19 @@ function PromptStudioModal({ draft, config, simplePrompt, rawPrompt, previewTab,
   const [savedTemplates, setSavedTemplates] = React.useState<any[]>([])
   const [assignedTemplate, setAssignedTemplate] = React.useState<{ image_template_id: string | null; name: string | null }>({ image_template_id: null, name: null })
   const [assigningTemplate, setAssigningTemplate] = React.useState(false)
+  const [designSystem, setDesignSystem] = React.useState<{ palettes: any[]; font_pairs: any[] }>({ palettes: [], font_pairs: [] })
 
   React.useEffect(() => {
     api.get("/api/image-templates").then((res) => setSavedTemplates(res.data || [])).catch(() => setSavedTemplates([]))
     if (!draft.id) return
     api.get(`/api/personas/${draft.id}/assign-image-template`).then((res) => setAssignedTemplate(res.data)).catch(() => setAssignedTemplate({ image_template_id: null, name: null }))
   }, [draft.id])
+
+  React.useEffect(() => {
+    api.get<{ palettes: any[]; font_pairs: any[]; layouts: any[] }>("/api/design-system")
+      .then((res) => setDesignSystem({ palettes: res.data.palettes || [], font_pairs: res.data.font_pairs || [] }))
+      .catch(() => setDesignSystem({ palettes: [], font_pairs: [] }))
+  }, [])
 
   async function assignTemplate(templateId: string) {
     if (!draft.id || !templateId) return
@@ -2001,7 +2013,74 @@ function PromptStudioModal({ draft, config, simplePrompt, rawPrompt, previewTab,
       <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '300ms' }}><h2 className="font-semibold">Content Rules</h2><TagInput label="What topics should the AI always write about?" values={config.always_topics} onAdd={(value) => onAddTag("always_topics", value)} onRemove={(value) => onConfig({ always_topics: config.always_topics.filter((item) => item !== value) })} /><TagInput label="What topics should the AI NEVER write about?" values={config.never_topics} onAdd={(value) => onAddTag("never_topics", value)} onRemove={(value) => onConfig({ never_topics: config.never_topics.filter((item) => item !== value) })} /><div className="grid gap-2"><Label>What should every post include?</Label><div className="flex flex-wrap gap-2">{includeOptions.map((item) => <Button key={item} type="button" variant={config.every_post_includes.includes(item) ? "default" : "outline"} onClick={() => onToggleConfigList("every_post_includes", item)}>{item}</Button>)}</div></div><div className="grid gap-2"><Label>What should posts NEVER do?</Label><div className="flex flex-wrap gap-2">{neverOptions.map((item) => <Button key={item} type="button" variant={config.never_do.includes(item) ? "default" : "outline"} onClick={() => onToggleConfigList("never_do", item)}>{item}</Button>)}</div></div><div className="grid gap-2"><Label>How long should posts be?</Label><input type="range" min={0} max={2} value={["Short", "Medium", "Long"].indexOf(config.length)} onChange={(event) => onConfig({ length: (["Short", "Medium", "Long"] as const)[Number(event.target.value)] })} /><div className="flex justify-between text-xs text-slate-500"><span>Short</span><span>Medium</span><span>Long</span></div></div></div>
       <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '450ms' }}><h2 className="font-semibold">Format and Style Rules</h2><div className="grid gap-2"><Label>How should posts be structured?</Label><Select value={config.structure} onChange={(event) => onConfig({ structure: event.target.value })}>{structureOptions.map((item) => <option key={item}>{item}</option>)}</Select></div><div className="grid gap-2"><Label>What writing style examples do you love?</Label><Textarea className="min-h-28" value={config.examples} onChange={(event) => onConfig({ examples: event.target.value })} placeholder="Paste example posts that feel like what you want. The AI will study these." /></div><div className="grid gap-2"><Label>What language should posts be written in?</Label><Select value={draft.language} onChange={(event) => onChange({ ...draft, language: event.target.value })}>{languages.map((language) => <option key={language}>{language}</option>)}</Select></div></div>
       <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '600ms' }}><h2 className="font-semibold">Advanced Control</h2><div className="grid gap-2"><Label>Write any additional instructions in your own words</Label><Textarea className="min-h-28" value={draft.custom_instructions || ""} onChange={(event) => onChange({ ...draft, custom_instructions: event.target.value })} /></div><div className="grid gap-2"><Label>Rate how creative vs safe you want the AI to be: {draft.creativity_level}/10</Label><input type="range" min={1} max={10} value={draft.creativity_level} onChange={(event) => onChange({ ...draft, creativity_level: Number(event.target.value) })} /><div className="flex justify-between text-xs text-slate-500"><span>Very safe, predictable, consistent.</span><span>Very creative, experimental, surprising.</span></div></div><PersonaScheduleEditor schedule={schedule} onChange={onScheduleChange} /><div className="flex items-center justify-between rounded-md border p-3"><Label>Learning Mode</Label><Switch checked={draft.learning_mode_enabled} onCheckedChange={(checked) => onChange({ ...draft, learning_mode_enabled: checked })} /></div>{draft.learned_patterns_summary ? <p className="text-sm text-slate-500">{draft.learned_patterns_summary}</p> : null}</div>
-      <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '750ms' }}><h2 className="font-semibold flex items-center gap-2"><LayoutTemplate className="size-4" /> Image Template</h2><div className="grid gap-2"><Label>Assigned template</Label><p className="text-sm text-slate-600">{assignedTemplate.name || "None assigned"}</p>{assignedTemplate.image_template_id ? <Button variant="outline" onClick={unassignTemplate} disabled={assigningTemplate}>Unassign</Button> : null}</div><div className="grid gap-2"><Label>Select template</Label><Select value={assignedTemplate.image_template_id || ""} onChange={(event) => assignTemplate(event.target.value)}><option value="">Choose a saved template</option>{savedTemplates.map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}</Select><p className="text-xs text-slate-500">Manage templates in the Templates page.</p></div></div>
+      <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '750ms' }}>
+        <h2 className="font-semibold flex items-center gap-2">
+          <span className="inline-flex size-4 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-pink-500" />
+          Brand Kit
+        </h2>
+        <p className="text-xs text-slate-500">Lock in a palette and font pair so every AI-generated image for this persona stays on-brand.</p>
+        <div className="grid gap-2">
+          <Label>Default Palette</Label>
+          <Select
+            value={draft.brand_palette_id || ""}
+            onChange={(event) => onChange({ ...draft, brand_palette_id: event.target.value || null })}
+          >
+            <option value="">— No preference (AI chooses) —</option>
+            {designSystem.palettes.map((p: any) => (
+              <option key={p.id} value={p.id}>
+                {p.name} {p.mood?.length ? `· ${p.mood.slice(0, 2).join(", ")}` : ""}
+              </option>
+            ))}
+          </Select>
+          {draft.brand_palette_id && (() => {
+            const pal = designSystem.palettes.find((p: any) => p.id === draft.brand_palette_id)
+            if (!pal) return null
+            const swatchColors: string[] = [pal.background, pal.primary_text, pal.accent, pal.secondary].filter(Boolean)
+            return (
+              <div className="flex items-center gap-2 mt-1">
+                {swatchColors.map((color: string, i: number) => (
+                  <span
+                    key={i}
+                    title={color}
+                    className="size-5 rounded-full border border-black/10 shadow-sm"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+                <span className="text-xs text-slate-500">{pal.name}</span>
+              </div>
+            )
+          })()}
+        </div>
+        <div className="grid gap-2">
+          <Label>Default Font Pair</Label>
+          <Select
+            value={draft.brand_font_pair_id || ""}
+            onChange={(event) => onChange({ ...draft, brand_font_pair_id: event.target.value || null })}
+          >
+            <option value="">— No preference (AI chooses) —</option>
+            {designSystem.font_pairs.map((fp: any) => (
+              <option key={fp.id} value={fp.id}>
+                {fp.heading_font} / {fp.body_font} {fp.mood?.length ? `· ${fp.mood.slice(0, 2).join(", ")}` : ""}
+              </option>
+            ))}
+          </Select>
+          {draft.brand_font_pair_id && (() => {
+            const fp = designSystem.font_pairs.find((f: any) => f.id === draft.brand_font_pair_id)
+            if (!fp) return null
+            return (
+              <p className="text-xs text-slate-500 mt-1">
+                <span className="font-semibold">{fp.heading_font}</span> for headings · <span className="font-semibold">{fp.body_font}</span> for body text
+              </p>
+            )
+          })()}
+        </div>
+        {(draft.brand_palette_id || draft.brand_font_pair_id) && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+            ✦ AI Auto-Design will be forced to use these selections for this persona.
+          </p>
+        )}
+      </div>
+      <div className="grid gap-3 rounded-md border p-4 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards" style={{ animationDelay: '900ms' }}><h2 className="font-semibold flex items-center gap-2"><LayoutTemplate className="size-4" /> Image Template</h2><div className="grid gap-2"><Label>Assigned template</Label><p className="text-sm text-slate-600">{assignedTemplate.name || "None assigned"}</p>{assignedTemplate.image_template_id ? <Button variant="outline" onClick={unassignTemplate} disabled={assigningTemplate}>Unassign</Button> : null}</div><div className="grid gap-2"><Label>Select template</Label><Select value={assignedTemplate.image_template_id || ""} onChange={(event) => assignTemplate(event.target.value)}><option value="">Choose a saved template</option>{savedTemplates.map((tpl) => <option key={tpl.id} value={tpl.id}>{tpl.name}</option>)}</Select><p className="text-xs text-slate-500">Manage templates in the Templates page.</p></div></div>
     </div>
     <aside className="grid h-fit gap-3 rounded-md border bg-slate-50 p-4 lg:sticky lg:top-4 overflow-y-auto max-h-[85vh]">
       {strategy && !strategy.applied_to_prompt && strategy.suggested_prompt ? (
@@ -2899,7 +2978,7 @@ export function TemplateLibraryView() {
                 </Button>
                 <Button type="button" variant="outline" className="w-full" onClick={() => setCreateMode("manual")}>
                   <LayoutTemplate className="size-4 mr-2" />
-                  New Template (4 builders)
+                  Visual Canvas Builder
                 </Button>
               </>
             ) : (

@@ -8,12 +8,19 @@ def _load_env_file() -> None:
     if not env_path.exists():
         return
 
+    existing_env_keys = set(os.environ.keys())
+    env_values: dict[str, str] = {}
     for raw_line in env_path.read_text().splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        env_values[key.strip()] = value.strip().strip('"').strip("'")
+
+    for key, value in env_values.items():
+        if key in existing_env_keys:
+            continue
+        os.environ[key] = value
 
 
 _load_env_file()
@@ -96,6 +103,8 @@ OPENROUTER_API_BASE_URL = os.getenv("OPENROUTER_API_BASE_URL", "https://openrout
 # Image generation providers
 FAL_API_KEY = os.getenv("FAL_API_KEY", "")
 STABILITY_API_KEY = os.getenv("STABILITY_API_KEY", "")
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
+CAT_API_KEY = os.getenv("CAT_API_KEY", "")
 # Google AI Studio (https://aistudio.google.com/apikey) — GEMINI_API_KEY or GOOGLE_API_KEY
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")

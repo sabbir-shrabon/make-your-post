@@ -7,7 +7,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
-import type { DividerLayer, FontAsset, OverlayLayer, ShapeLayer, TemplateLayer, TextLayer } from "@/lib/template-types"
+import type {
+  DividerLayer,
+  EmojiLayer,
+  FontAsset,
+  IconLayer,
+  OverlayLayer,
+  ShapeLayer,
+  TemplateLayer,
+  TextLayer,
+} from "@/lib/template-types"
 
 type LayerLayoutKey =
   | "position_x_percent"
@@ -94,6 +103,8 @@ export function TemplateLayerFields({
           onChange={(color_options) => onChange({ color_options } as Partial<TemplateLayer>)}
         />
       ) : null}
+      {layer.type === "icon" ? <IconLayerFields layer={layer} onChange={onChange} /> : null}
+      {layer.type === "emoji" ? <EmojiLayerFields layer={layer} onChange={onChange} /> : null}
       {layer.type === "logo" ? (
         <div className="grid gap-2 border border-dashed border-purple-300 rounded p-3 bg-white">
           <Label className="font-semibold text-xs text-purple-950">Preview Logo Image</Label>
@@ -466,6 +477,64 @@ function OverlayColorEditor({
           </Button>
         </div>
       ))}
+    </div>
+  )
+}
+
+function IconLayerFields({
+  layer,
+  onChange,
+}: {
+  layer: IconLayer
+  onChange: (patch: Partial<TemplateLayer>) => void
+}) {
+  return (
+    <div className="grid gap-3 border border-dashed border-purple-300 rounded p-3 bg-white">
+      <div className="grid gap-1">
+        <Label className="text-xs">Icon name</Label>
+        <Input
+          value={layer.icon_name}
+          onChange={(e) => onChange({ icon_name: e.target.value } as Partial<TemplateLayer>)}
+          placeholder="mdi:star"
+        />
+      </div>
+      <div className="grid gap-1">
+        <Label className="text-xs">Color</Label>
+        <Input
+          type="color"
+          value={layer.icon_color_hex || "#ffffff"}
+          onChange={(e) => onChange({ icon_color_hex: e.target.value } as Partial<TemplateLayer>)}
+        />
+      </div>
+    </div>
+  )
+}
+
+function EmojiLayerFields({
+  layer,
+  onChange,
+}: {
+  layer: EmojiLayer
+  onChange: (patch: Partial<TemplateLayer>) => void
+}) {
+  return (
+    <div className="grid gap-3 border border-dashed border-purple-300 rounded p-3 bg-white">
+      <div className="grid gap-1">
+        <Label className="text-xs">Emoji</Label>
+        <Input
+          value={layer.emoji}
+          onChange={(e) => onChange({ emoji: e.target.value } as Partial<TemplateLayer>)}
+          placeholder="✨"
+        />
+      </div>
+      <div className="grid gap-1">
+        <Label className="text-xs">Color tint</Label>
+        <Input
+          type="color"
+          value={layer.emoji_color_hex || "#ffffff"}
+          onChange={(e) => onChange({ emoji_color_hex: e.target.value } as Partial<TemplateLayer>)}
+        />
+      </div>
     </div>
   )
 }

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "price-bubble",
+    "svg": "<svg viewBox=\"0 0 220 220\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><circle cx=\"110\" cy=\"110\" r=\"96\" fill=\"{{color}}\" /><circle cx=\"110\" cy=\"110\" r=\"78\" stroke=\"rgba(255,255,255,0.74)\" stroke-width=\"6\" stroke-dasharray=\"14 10\" /></svg>",
+    "mood": ["promo", "sale", "bold"]
+  },
+  {
+    "id": "ribbon-banner",
+    "svg": "<svg viewBox=\"0 0 320 110\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M18 18H302L274 55L302 92H18L46 55L18 18Z\" fill=\"{{color}}\" /><path d=\"M46 55L18 18V92L46 55ZM274 55L302 18V92L274 55Z\" fill=\"rgba(0,0,0,0.18)\" /></svg>",
+    "mood": ["classic", "celebration", "award"]
+  },
+  {
+    "id": "starburst",
+    "svg": "<svg viewBox=\"0 0 240 240\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M120 8L138 52L178 27L171 74L218 67L187 104L232 120L187 136L218 173L171 166L178 213L138 188L120 232L102 188L62 213L69 166L22 173L53 136L8 120L53 104L22 67L69 74L62 27L102 52L120 8Z\" fill=\"{{color}}\" /></svg>",
+    "mood": ["urgent", "energetic", "retail"]
+  },
+  {
+    "id": "divider",
+    "svg": "<svg viewBox=\"0 0 360 32\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M4 16H140\" stroke=\"{{color}}\" stroke-width=\"8\" stroke-linecap=\"round\" /><circle cx=\"180\" cy=\"16\" r=\"10\" fill=\"{{color}}\" /><path d=\"M220 16H356\" stroke=\"{{color}}\" stroke-width=\"8\" stroke-linecap=\"round\" /></svg>",
+    "mood": ["elegant", "structured", "clean"]
+  },
+  {
+    "id": "corner-accent",
+    "svg": "<svg viewBox=\"0 0 180 180\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M0 0H180L0 180V0Z\" fill=\"{{color}}\" /><path d=\"M24 24H124L24 124V24Z\" fill=\"rgba(255,255,255,0.28)\" /></svg>",
+    "mood": ["modern", "tech", "sharp"]
+  },
+  {
+    "id": "simple-arrow",
+    "svg": "<svg viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M5 12H19M19 12L12 5M19 12L12 19\" stroke=\"{{color}}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+    "mood": ["direct", "informative", "action"]
+  }
+]

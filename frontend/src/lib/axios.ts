@@ -21,7 +21,7 @@
 
 import axios from "axios"
 
-import { getBackendUrl } from "./env"
+import { getBackendUrl, shouldShowColdStartOverlay } from "./env"
 
 /**
  * Single source of truth for the localStorage key that stores the JWT.
@@ -79,11 +79,14 @@ axiosInstance.interceptors.request.use(
       delete (config.headers as Record<string, string>)["Content-Type"]
     }
 
-    // Start cold start timer — show the "waking up" banner after 3 s
-    const timer = window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: true }))
-    }, 3000)
-    ;(config as any)._coldStartTimer = timer
+    const targetUrl = config.baseURL || resolveBaseUrl()
+    if (shouldShowColdStartOverlay(targetUrl)) {
+      // Show the cold-start banner only for non-local backends when requests are taking longer than expected.
+      const timer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("backend-cold-start", { detail: true }))
+      }, 3000)
+      ;(config as any)._coldStartTimer = timer
+    }
 
     return config
   },

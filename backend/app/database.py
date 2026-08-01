@@ -48,6 +48,7 @@ def create_database_tables() -> None:
         _ensure_user_settings_table()
         _migrate_ai_page_settings_to_personas()
         _ensure_background_asset_schema()
+        _ensure_persona_brand_kit()
     except OperationalError as exc:
         message = str(exc.orig).lower() if getattr(exc, "orig", None) else str(exc).lower()
         
@@ -543,6 +544,17 @@ def _ensure_background_asset_schema() -> None:
         print("[MIGRATION] Background asset config data migrated successfully")
     except Exception as e:
         print(f"[MIGRATION WARNING] Could not migrate background asset config data: {e}")
+
+
+def _ensure_persona_brand_kit() -> None:
+    """Add brand_palette_id and brand_font_pair_id to ai_personas if missing."""
+    _add_missing_columns(
+        "ai_personas",
+        {
+            "brand_palette_id": "varchar",
+            "brand_font_pair_id": "varchar",
+        },
+    )
 
 
 def get_db():

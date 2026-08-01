@@ -54,7 +54,7 @@ except Exception as e:
     Pango = None
     PangoCairo = None
 
-from app import models, schemas
+from app import models, schemas, design_system_data
 from app.auth import get_current_user
 from app.config import CRON_SECRET, GEMINI_API_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL
 from app.database import SessionLocal, get_db
@@ -1185,6 +1185,7 @@ _MANUAL_TEMPLATE_JSON_REFERENCE = """{
   "canvas_height": 1080,
   "aspect_ratio": "1:1",
   "background_options": [{"asset_id": "uuid", "label": "string"}],
+  "background_texture": "none|noise|dot-grid|diagonal-stripes",
   "layers": [
     {
       "id": "layer_1",
@@ -3998,3 +3999,234 @@ async def test_image_template_render(
     return {
         "preview_image_url": preview_image_url
     }
+
+@router.get("/api/design-system")
+async def get_design_system():
+    return {
+        "palettes": design_system_data.PALETTES,
+        "font_pairs": design_system_data.FONT_PAIRS,
+        "layouts": design_system_data.LAYOUTS,
+        "shape_types": design_system_data.SHAPE_TYPES,
+        "texture_options": design_system_data.TEXTURE_OPTIONS,
+    }
+
+@router.post(
+    "/api/ai/auto-design",
+    response_model=schemas.AutoDesignResponse,
+)
+async def generate_auto_design(
+    payload: schemas.AutoDesignRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    description = (payload.description or "").strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description is required.")
+
+    _ensure_default_template_assets(db, current_user.id)
+
+    aspect = payload.canvas_aspect_ratio or "1:1"
+    canvas_w, canvas_h = _ASPECT_DIMENSIONS.get(aspect, _ASPECT_DIMENSIONS["1:1"])
+
+    bg_ids = [str(i).strip() for i in payload.available_background_asset_ids if str(i).strip()]
+    bg_query = db.query(models.TemplateBackgroundAsset).filter(
+        models.TemplateBackgroundAsset.user_id == current_user.id,
+    )
+    if bg_ids:
+        bg_assets = bg_query.filter(models.TemplateBackgroundAsset.id.in_(bg_ids)).all()
+    else:
+        bg_assets = bg_query.all()
+
+    font_rows = (
+        db.query(models.TemplateFontAsset)
+        .filter(models.TemplateFontAsset.user_id == current_user.id)
+        .all()
+    )
+
+    bg_lines = [
+        f"Background option: id={a.id}, type={a.type}, name='{a.label or a.type}'"
+        for a in bg_assets
+    ]
+
+    palettes_str = json.dumps([{ "id": p["id"], "mood": p.get("mood", []) } for p in design_system_data.PALETTES], indent=2)
+    font_pairs_str = json.dumps([{ "id": fp["id"], "mood": fp.get("mood", []) } for fp in design_system_data.FONT_PAIRS], indent=2)
+    layouts_str = json.dumps([{ "id": l["id"], "name": l.get("name", "") } for l in design_system_data.LAYOUTS], indent=2)
+    shapes_str = json.dumps(design_system_data.SHAPE_TYPES)
+    textures_str = json.dumps(design_system_data.TEXTURE_OPTIONS)
+
+    brand_rules = ""
+    if payload.persona_id:
+        persona = db.query(models.AIPersona).filter(
+            models.AIPersona.id == payload.persona_id,
+            models.AIPersona.user_id == current_user.id
+        ).first()
+        if persona:
+            if persona.brand_palette_id:
+                brand_rules += f"\n- CRITICAL RULE: You MUST use palette_id: '{persona.brand_palette_id}'. Do not choose any other."
+            if persona.brand_font_pair_id:
+                brand_rules += f"\n- CRITICAL RULE: You MUST use font_pair_id: '{persona.brand_font_pair_id}'. Do not choose any other."
+
+    system_prompt = (
+        "You are an AI Auto-Design Agent. "
+        "The user will describe a design and you must output a valid JSON object matching the requested schema. "
+        "No explanation. No markdown. No backticks. Raw JSON only.\n\n"
+        f"Available background assets (you MUST pick 1-3 for background_options using exact asset_id values):\n"
+        + ("\n".join(bg_lines) if bg_lines else "(none — omit background_options)")
+        + "\n\nAvailable Palettes:\n" + palettes_str
+        + "\n\nAvailable Font Pairs:\n" + font_pairs_str
+        + "\n\nAvailable Layouts:\n" + layouts_str
+        + "\n\nAvailable Shapes:\n" + shapes_str
+        + "\n\nAvailable Textures:\n" + textures_str
+        + "\n\nThe output JSON must follow this exact structure:\n"
+        "{\n"
+        '  "layout_id": "string",\n'
+        '  "font_pair_id": "string",\n'
+        '  "palette_id": "string",\n'
+        '  "background_texture": "string (optional)",\n'
+        '  "background_options": [{"asset_id": "string", "label": "string"}],\n'
+        '  "shape": {\n'
+        '    "type": "string (must be from Available Shapes)",\n'
+        '    "x_percent": float,\n'
+        '    "y_percent": float,\n'
+        '    "color": "hex string"\n'
+        '  }\n'
+        '}\n'
+        "\nRules:\n"
+        "- Use EXACT IDs from the lists provided.\n"
+        "- The shape color should match the palette's accent or text color, or a visually appealing color."
+        f"{brand_rules}\n"
+        f"\nUSER DESCRIPTION:\n{description}\n"
+    )
+
+    try:
+        response_text = _call_llm_for_template_json(
+            user_id=current_user.id,
+            db=db,
+            description=description,
+            system_prompt=system_prompt,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LLM request failed: {exc}")
+
+    try:
+        parsed = _parse_json_with_fallback(response_text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to parse LLM JSON: {exc}")
+
+    layout_id = parsed.get("layout_id") or "centered-hero"
+    font_pair_id = parsed.get("font_pair_id") or "anton-montserrat"
+    palette_id = parsed.get("palette_id") or "ink-sun"
+    bg_texture = parsed.get("background_texture")
+    shape_spec = parsed.get("shape")
+
+    layout = design_system_data.get_layout(layout_id) or design_system_data.LAYOUTS[0]
+    font_pair = design_system_data.get_font_pair(font_pair_id) or design_system_data.FONT_PAIRS[0]
+    palette = design_system_data.get_palette(palette_id) or design_system_data.PALETTES[0]
+
+    # Map font pair strings to actual font asset IDs
+    heading_font_id = None
+    body_font_id = None
+    for f in font_rows:
+        if font_pair.get("heading_font", "").lower() in f.display_name.lower():
+            heading_font_id = str(f.id)
+        if font_pair.get("body_font", "").lower() in f.display_name.lower():
+            body_font_id = str(f.id)
+            
+    if not heading_font_id and font_rows: heading_font_id = str(font_rows[0].id)
+    if not body_font_id and font_rows: body_font_id = str(font_rows[0].id)
+
+    # Build layers from layout anchors
+    layers = []
+    anchors = layout.get("anchors", {})
+    
+    bg_color = palette.get("background_colors", ["#000000"])[0]
+    text_color = palette.get("text_color", "#FFFFFF")
+    accent_color = palette.get("accent_color", "#FFFFFF")
+
+    if "heading" in anchors:
+        layers.append({
+            "id": "layer_heading",
+            "type": "text",
+            "role": "headline",
+            "z_index": 3,
+            "position_x_percent": anchors["heading"]["x"],
+            "position_y_percent": anchors["heading"]["y"],
+            "width_percent": 80,
+            "height_percent": 20,
+            "font_options": [{"font_asset_id": heading_font_id, "label": "Heading Font"}] if heading_font_id else [],
+            "color_options": [{"color_hex": text_color, "label": "Text Color"}, {"color_hex": accent_color, "label": "Accent Color"}],
+            "font_size_min_percent": 6,
+            "font_size_max_percent": 9,
+            "text_align_options": ["center"],
+            "font_weight": "bold",
+        })
+        
+    if "subheading" in anchors:
+        layers.append({
+            "id": "layer_subheading",
+            "type": "text",
+            "role": "subheadline",
+            "z_index": 4,
+            "position_x_percent": anchors["subheading"]["x"],
+            "position_y_percent": anchors["subheading"]["y"],
+            "width_percent": 70,
+            "height_percent": 15,
+            "font_options": [{"font_asset_id": body_font_id, "label": "Body Font"}] if body_font_id else [],
+            "color_options": [{"color_hex": text_color, "label": "Text Color"}],
+            "font_size_min_percent": 3,
+            "font_size_max_percent": 5,
+            "text_align_options": ["center"],
+            "font_weight": "regular",
+        })
+
+    if "logo" in anchors:
+        layers.append({
+            "id": "layer_logo",
+            "type": "logo",
+            "z_index": 5,
+            "position_x_percent": anchors["logo"]["x"],
+            "position_y_percent": anchors["logo"]["y"],
+            "width_percent": 15,
+            "height_percent": 10,
+        })
+        
+    if shape_spec and shape_spec.get("type") in design_system_data.SHAPE_TYPES:
+        layers.append({
+            "id": "layer_shape",
+            "type": "shape",
+            "shape_type": "circle" if shape_spec["type"] == "PriceBubble" else "rectangle", # mapping loosely
+            "z_index": 1,
+            "position_x_percent": shape_spec.get("x_percent", 50),
+            "position_y_percent": shape_spec.get("y_percent", 50),
+            "width_percent": 30,
+            "height_percent": 30,
+            "fill_color_options": [{"color_hex": shape_spec.get("color", accent_color), "label": "Shape Color"}],
+            "opacity": 100
+        })
+
+    bg_options = parsed.get("background_options", [])
+    if not bg_options and bg_assets:
+        bg_options = [{"asset_id": str(bg_assets[0].id), "label": "Background"}]
+
+    template_json = {
+        "canvas_width": canvas_w,
+        "canvas_height": canvas_h,
+        "aspect_ratio": aspect,
+        "background_options": bg_options,
+        "background_texture": bg_texture if bg_texture in design_system_data.TEXTURE_OPTIONS else "none",
+        "layers": layers
+    }
+    
+    _validate_manual_layer_constraints(template_json)
+    _validate_manual_template_assets(db, current_user.id, template_json)
+    suggested_name = _suggested_template_name_from_description(description)
+
+    return schemas.AutoDesignResponse(
+        layout_id=layout_id,
+        font_pair_id=font_pair_id,
+        palette_id=palette_id,
+        background_texture=template_json["background_texture"],
+        shape=schemas.AutoDesignShapeSpec(**shape_spec) if shape_spec else None,
+        template_json=schemas.ManualTemplateJson(**template_json),
+        suggested_name=suggested_name,
+    )

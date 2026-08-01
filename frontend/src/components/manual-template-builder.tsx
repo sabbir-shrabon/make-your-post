@@ -4,6 +4,7 @@ import * as React from "react"
 import { Check, ChevronLeft, ChevronRight, Layers, Loader2, Pencil, Plus, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
+import { TemplateBuilder } from "@/components/template-builder/template-builder"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -225,7 +226,14 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
   const [previewLoading, setPreviewLoading] = React.useState(false)
   const [bgTab, setBgTab] = React.useState<"colors" | "gradients" | "photos">("colors")
   const [uploadingBg, setUploadingBg] = React.useState(false)
+  const [stockQuery, setStockQuery] = React.useState("nature")
+  const [stockPhotos, setStockPhotos] = React.useState<Array<{ id: number; photographer: string; thumbnail: string; large: string }>>([])
+  const [stockLoading, setStockLoading] = React.useState(false)
+  const [stockError, setStockError] = React.useState<string | null>(null)
+  const [extraBackgroundAssets, setExtraBackgroundAssets] = React.useState<BackgroundAsset[]>([])
   const previewUrlRef = React.useRef<string | null>(null)
+
+  return <TemplateBuilder onCancel={onCancel} onSaved={onSaved} />
 
   React.useEffect(() => {
     let cancelled = false
@@ -358,6 +366,45 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
     } finally {
       setUploadingBg(false)
       if (e.target) e.target.value = ""
+    }
+  }
+
+  async function fetchStockPhotos(query: string, page = 1) {
+    if (!query.trim()) {
+      setStockPhotos([])
+      return
+    }
+    setStockLoading(true)
+    setStockError(null)
+    try {
+      const response = await api.get<{ photos: Array<{ id: number; photographer: string; thumbnail: string; large: string }> }>(
+        "/api/stock-photos",
+        { params: { query, page } },
+      )
+      setStockPhotos(response.data.photos)
+    } catch (err) {
+      setStockError("Could not load stock photos.")
+    } finally {
+      setStockLoading(false)
+    }
+  }
+
+  async function importStockPhoto(photo: { id: number; photographer: string; large: string }) {
+    try {
+      setStockLoading(true)
+      const response = await api.post<BackgroundAsset>("/api/stock-photos/import", {
+        photo_id: photo.id,
+        photographer: photo.photographer,
+        image_url: photo.large,
+      })
+      setBackgroundAssets((prev) => [...prev, response.data])
+      setExtraBackgroundAssets((prev) => [...prev, response.data])
+      toggleBackground(response.data)
+      toast.success("Stock photo added to your backgrounds.")
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to import stock photo."))
+    } finally {
+      setStockLoading(false)
     }
   }
 
@@ -518,7 +565,7 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
     }
   }
 
-  const editingLayer = state.layers.find((l) => l.id === editingLayerId)
+  const editingLayer = state.layers.find((l) => l.id === editingLayerId) ?? null
 
   return (
     <Card className="border-purple-200">
@@ -615,6 +662,45 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {bgTab === "photos" && (
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex gap-2">
+                        <input
+                          value={stockQuery}
+                          onChange={(e) => setStockQuery(e.target.value)}
+                          placeholder="Search stock photos"
+                          className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") fetchStockPhotos(stockQuery)
+                          }}
+                        />
+                        <Button type="button" size="sm" onClick={() => fetchStockPhotos(stockQuery)} disabled={stockLoading}>
+                          Search
+                        </Button>
+                      </div>
+                      {stockError ? <p className="mt-2 text-xs text-red-500">{stockError}</p> : null}
+                      {stockLoading ? (
+                        <div className="mt-3 text-center">
+                          <Loader2 className="size-6 animate-spin text-purple-600" />
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {stockPhotos.map((photo) => (
+                        <div key={photo.id} className="rounded-lg border overflow-hidden bg-white">
+                          <img src={photo.thumbnail} alt={photo.photographer} className="h-28 w-full object-cover" />
+                          <div className="p-2">
+                            <p className="text-xs text-slate-600 truncate">{photo.photographer}</p>
+                            <Button type="button" size="sm" className="mt-2 w-full" onClick={() => importStockPhoto(photo)}>
+                              Add background
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {bgTab === "photos" && (
                   <label className="relative aspect-square rounded-lg border-2 border-dashed border-slate-300 hover:border-purple-400 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-50">
                     <input type="file" className="hidden" accept="image/jpeg,image/png" onChange={handlePhotoUpload} disabled={uploadingBg} />
@@ -764,11 +850,11 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
               </ul>
             )}
 
-            {editingLayer ? (
+            {editingLayer !== null ? (
               <LayerEditor
-                layer={editingLayer}
+                layer={editingLayer as LayerDraft}
                 fontAssets={fontAssets}
-                onChange={(patch) => updateLayer(editingLayer.id, patch)}
+                onChange={(patch) => updateLayer(editingLayer!.id, patch)}
                 onClose={() => setEditingLayerId(null)}
               />
             ) : null}
@@ -787,7 +873,7 @@ export function ManualTemplateBuilder({ onCancel, onSaved }: ManualTemplateBuild
                 </div>
               ) : previewUrl ? (
                 <img
-                  src={previewUrl}
+                  src={previewUrl ?? undefined}
                   alt="Template preview"
                   className="max-w-full max-h-[480px] h-auto shadow-md rounded"
                 />

@@ -206,6 +206,8 @@ class AIPersonaBase(BaseModel):
     template_logo_url: str | None = None
     template_layers_json: dict | None = None
     template_reference_image_url: str | None = None
+    brand_palette_id: str | None = None
+    brand_font_pair_id: str | None = None
 
 
 class AIPersonaCreate(AIPersonaBase):
@@ -457,6 +459,7 @@ class ManualTemplateJson(BaseModel):
     canvas_height: int = Field(gt=0)
     aspect_ratio: str
     background_options: list[BackgroundOption] = Field(min_length=1, max_length=6)
+    background_texture: str | None = None
     layers: list[TemplateLayer] = Field(default_factory=list)
 
 
@@ -501,6 +504,30 @@ class GenerateTemplateFromDescriptionResponse(BaseModel):
     aspect_ratio: str
     canvas_width: int
     canvas_height: int
+
+
+class AutoDesignShapeSpec(BaseModel):
+    type: str
+    x_percent: float
+    y_percent: float
+    color: str
+
+
+class AutoDesignRequest(BaseModel):
+    description: str
+    canvas_aspect_ratio: str = "1:1"
+    available_background_asset_ids: list[str] = Field(default_factory=list)
+    persona_id: int | None = None
+
+
+class AutoDesignResponse(BaseModel):
+    layout_id: str
+    font_pair_id: str
+    palette_id: str
+    background_texture: str | None = None
+    shape: AutoDesignShapeSpec | None = None
+    template_json: ManualTemplateJson
+    suggested_name: str
 
 
 class ImageTemplateBase(BaseModel):

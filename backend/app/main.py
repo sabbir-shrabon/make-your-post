@@ -91,6 +91,8 @@ from app.routers.settings_models import router as settings_models_router
 from app.routers.persona_image_templates import router as persona_image_templates_router
 from app.routers.brand_automation import router as brand_automation_router
 from app.routers.schedule_routes import router as schedule_routes_router
+from app.routers.stock_photos import router as stock_photos_router
+from app.routers.cat_photos import router as cat_photos_router
 from app.mistral_service import (
     suggest_prompt_improvement,
     synthesize_learned_strategy,
@@ -417,6 +419,8 @@ app.include_router(settings_models_router)
 app.include_router(persona_image_templates_router)
 app.include_router(brand_automation_router)
 app.include_router(schedule_routes_router)
+app.include_router(stock_photos_router)
+app.include_router(cat_photos_router)
 
 # ---------------------------------------------------------------------------
 # CORS — Dynamic, env-driven origin allowlist

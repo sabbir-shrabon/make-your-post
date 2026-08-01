@@ -69,7 +69,7 @@ export function NetworkOverlay() {
             <Loader2 className="size-6 animate-spin text-blue-600" />
           </div>
           <span className="text-sm font-medium text-slate-700">
-            Waking up secure background servers (this may take up to 30 seconds on the free tier)...
+            The backend is taking longer than expected. Please wait a moment while it responds.
           </span>
         </div>
       </div>

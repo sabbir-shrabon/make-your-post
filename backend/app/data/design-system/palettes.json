@@ -1,0 +1,107 @@
+[
+  {
+    "id": "ink-sun",
+    "background_colors": ["#0E1116", "#F8C630"],
+    "text_color": "#FFFFFF",
+    "accent_color": "#F8C630",
+    "mood": ["bold", "high-contrast", "promo"]
+  },
+  {
+    "id": "cream-berry",
+    "background_colors": ["#FFF4E6", "#B0004F"],
+    "text_color": "#25131A",
+    "accent_color": "#B0004F",
+    "mood": ["warm", "sweet", "food"]
+  },
+  {
+    "id": "midnight-mint",
+    "background_colors": ["#111827", "#2DD4BF"],
+    "text_color": "#F9FAFB",
+    "accent_color": "#2DD4BF",
+    "mood": ["modern", "fresh", "tech"]
+  },
+  {
+    "id": "paper-tomato",
+    "background_colors": ["#FAF7F0", "#E63946"],
+    "text_color": "#1D1D1F",
+    "accent_color": "#E63946",
+    "mood": ["friendly", "energetic", "retail"]
+  },
+  {
+    "id": "forest-lime",
+    "background_colors": ["#12372A", "#D9ED92"],
+    "text_color": "#F7FFE5",
+    "accent_color": "#D9ED92",
+    "mood": ["natural", "fresh", "organic"]
+  },
+  {
+    "id": "cobalt-coral",
+    "background_colors": ["#1446A0", "#FF6B6B"],
+    "text_color": "#FFFFFF",
+    "accent_color": "#FFDE59",
+    "mood": ["playful", "bright", "social"]
+  },
+  {
+    "id": "charcoal-lilac",
+    "background_colors": ["#202124", "#D8B4FE"],
+    "text_color": "#FFFFFF",
+    "accent_color": "#D8B4FE",
+    "mood": ["premium", "soft", "beauty"]
+  },
+  {
+    "id": "white-emerald",
+    "background_colors": ["#FFFFFF", "#10B981"],
+    "text_color": "#10231B",
+    "accent_color": "#10B981",
+    "mood": ["clean", "trustworthy", "wellness"]
+  },
+  {
+    "id": "plum-gold",
+    "background_colors": ["#3B0A45", "#D4AF37"],
+    "text_color": "#FFF8E7",
+    "accent_color": "#D4AF37",
+    "mood": ["luxury", "rich", "celebration"]
+  },
+  {
+    "id": "sky-navy",
+    "background_colors": ["#E0F2FE", "#0F172A"],
+    "text_color": "#0F172A",
+    "accent_color": "#0284C7",
+    "mood": ["calm", "professional", "clear"]
+  },
+  {
+    "id": "black-neon",
+    "background_colors": ["#050505", "#A3E635"],
+    "text_color": "#F5F5F5",
+    "accent_color": "#A3E635",
+    "mood": ["edgy", "urgent", "nightlife"]
+  },
+  {
+    "id": "rose-espresso",
+    "background_colors": ["#FFE4E6", "#4A2C2A"],
+    "text_color": "#351B1A",
+    "accent_color": "#BE123C",
+    "mood": ["romantic", "crafted", "cafe"]
+  },
+  {
+    "id": "teal-orange",
+    "background_colors": ["#0F766E", "#FB923C"],
+    "text_color": "#FFFFFF",
+    "accent_color": "#FDBA74",
+    "mood": ["active", "balanced", "event"]
+  },
+  {
+    "id": "lavender-graphite",
+    "background_colors": ["#EEE7FF", "#2F3542"],
+    "text_color": "#24212B",
+    "accent_color": "#7C3AED",
+    "mood": ["creative", "polished", "studio"]
+  },
+  {
+    "id": "sand-indigo",
+    "background_colors": ["#F3E8C9", "#4338CA"],
+    "text_color": "#211C12",
+    "accent_color": "#4338CA",
+    "mood": ["artisanal", "confident", "market"]
+  }
+]

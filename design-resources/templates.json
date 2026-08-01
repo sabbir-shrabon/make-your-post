@@ -1,0 +1,128 @@
+[
+  {
+    "id": "centered-hero",
+    "name": "Centered hero",
+    "best_for": ["announcement", "quote", "sale"],
+    "slots": {
+      "headline":    { "x_pct": 10, "y_pct": 38, "w_pct": 80, "h_pct": 20, "align": "center" },
+      "subheadline": { "x_pct": 15, "y_pct": 60, "w_pct": 70, "h_pct": 10, "align": "center" },
+      "text_logo":   { "x_pct": 5,  "y_pct": 88, "w_pct": 30, "h_pct": 8,  "align": "left" },
+      "accent_icon": { "x_pct": 42, "y_pct": 20, "w_pct": 16, "h_pct": 16, "align": "center" }
+    }
+  },
+  {
+    "id": "top-heavy-headline",
+    "name": "Top heavy headline",
+    "best_for": ["announcement", "news", "event"],
+    "slots": {
+      "headline":    { "x_pct": 5,  "y_pct": 5,  "w_pct": 90, "h_pct": 30, "align": "left" },
+      "subheadline": { "x_pct": 5,  "y_pct": 38, "w_pct": 90, "h_pct": 15, "align": "left" },
+      "corner_badge":{ "x_pct": 75, "y_pct": 75, "w_pct": 20, "h_pct": 20, "align": "center" },
+      "text_logo":   { "x_pct": 5,  "y_pct": 85, "w_pct": 30, "h_pct": 10, "align": "left" }
+    }
+  },
+  {
+    "id": "bottom-banner",
+    "name": "Bottom banner",
+    "best_for": ["sale", "promo", "product"],
+    "slots": {
+      "headline":    { "x_pct": 5,  "y_pct": 65, "w_pct": 90, "h_pct": 15, "align": "center" },
+      "subheadline": { "x_pct": 5,  "y_pct": 82, "w_pct": 90, "h_pct": 10, "align": "center" },
+      "text_logo":   { "x_pct": 5,  "y_pct": 5,  "w_pct": 30, "h_pct": 10, "align": "left" },
+      "accent_icon": { "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" }
+    }
+  },
+  {
+    "id": "split-image-left",
+    "name": "Split image left",
+    "best_for": ["testimonial", "product", "informative"],
+    "slots": {
+      "headline":    { "x_pct": 55, "y_pct": 20, "w_pct": 40, "h_pct": 30, "align": "left" },
+      "subheadline": { "x_pct": 55, "y_pct": 55, "w_pct": 40, "h_pct": 20, "align": "left" },
+      "text_logo":   { "x_pct": 55, "y_pct": 85, "w_pct": 40, "h_pct": 10, "align": "left" }
+    }
+  },
+  {
+    "id": "split-image-right",
+    "name": "Split image right",
+    "best_for": ["testimonial", "product", "informative"],
+    "slots": {
+      "headline":    { "x_pct": 5,  "y_pct": 20, "w_pct": 40, "h_pct": 30, "align": "left" },
+      "subheadline": { "x_pct": 5,  "y_pct": 55, "w_pct": 40, "h_pct": 20, "align": "left" },
+      "text_logo":   { "x_pct": 5,  "y_pct": 85, "w_pct": 40, "h_pct": 10, "align": "left" }
+    }
+  },
+  {
+    "id": "corner-badge-promo",
+    "name": "Corner badge promo",
+    "best_for": ["sale", "discount", "promo"],
+    "slots": {
+      "corner_badge":{ "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" },
+      "headline":    { "x_pct": 10, "y_pct": 40, "w_pct": 60, "h_pct": 30, "align": "left" },
+      "subheadline": { "x_pct": 10, "y_pct": 75, "w_pct": 60, "h_pct": 15, "align": "left" },
+      "text_logo":   { "x_pct": 10, "y_pct": 10, "w_pct": 30, "h_pct": 10, "align": "left" }
+    }
+  },
+  {
+    "id": "minimal-quote",
+    "name": "Minimal quote",
+    "best_for": ["quote", "testimonial", "thoughts"],
+    "slots": {
+      "accent_icon": { "x_pct": 40, "y_pct": 15, "w_pct": 20, "h_pct": 20, "align": "center" },
+      "headline":    { "x_pct": 15, "y_pct": 40, "w_pct": 70, "h_pct": 30, "align": "center" },
+      "subheadline": { "x_pct": 25, "y_pct": 75, "w_pct": 50, "h_pct": 10, "align": "center" },
+      "text_logo":   { "x_pct": 40, "y_pct": 90, "w_pct": 20, "h_pct": 5,  "align": "center" }
+    }
+  },
+  {
+    "id": "list-steps",
+    "name": "List/Steps",
+    "best_for": ["informative", "how-to", "tips"],
+    "slots": {
+      "headline":    { "x_pct": 10, "y_pct": 10, "w_pct": 80, "h_pct": 20, "align": "left" },
+      "subheadline": { "x_pct": 10, "y_pct": 35, "w_pct": 80, "h_pct": 50, "align": "left" },
+      "text_logo":   { "x_pct": 10, "y_pct": 90, "w_pct": 30, "h_pct": 8,  "align": "left" }
+    }
+  },
+  {
+    "id": "before-after-split",
+    "name": "Before After Split",
+    "best_for": ["comparison", "transformation"],
+    "slots": {
+      "headline":    { "x_pct": 10, "y_pct": 5,  "w_pct": 80, "h_pct": 15, "align": "center" },
+      "text_before": { "x_pct": 10, "y_pct": 25, "w_pct": 35, "h_pct": 10, "align": "center" },
+      "text_after":  { "x_pct": 55, "y_pct": 25, "w_pct": 35, "h_pct": 10, "align": "center" },
+      "subheadline": { "x_pct": 10, "y_pct": 80, "w_pct": 80, "h_pct": 15, "align": "center" }
+    }
+  },
+  {
+    "id": "diagonal-split",
+    "name": "Diagonal split",
+    "best_for": ["creative", "bold"],
+    "slots": {
+      "headline":    { "x_pct": 5,  "y_pct": 5,  "w_pct": 50, "h_pct": 20, "align": "left" },
+      "subheadline": { "x_pct": 45, "y_pct": 75, "w_pct": 50, "h_pct": 20, "align": "right" }
+    }
+  },
+  {
+    "id": "right-rail",
+    "name": "Right rail",
+    "best_for": ["informative", "event", "news"],
+    "slots": {
+      "headline":    { "x_pct": 65, "y_pct": 10, "w_pct": 30, "h_pct": 30, "align": "left" },
+      "subheadline": { "x_pct": 65, "y_pct": 45, "w_pct": 30, "h_pct": 40, "align": "left" },
+      "text_logo":   { "x_pct": 65, "y_pct": 90, "w_pct": 30, "h_pct": 5,  "align": "left" }
+    }
+  },
+  {
+    "id": "product-showcase",
+    "name": "Product showcase",
+    "best_for": ["product", "sale", "announcement"],
+    "slots": {
+      "headline":    { "x_pct": 10, "y_pct": 10, "w_pct": 80, "h_pct": 15, "align": "center" },
+      "subheadline": { "x_pct": 10, "y_pct": 80, "w_pct": 80, "h_pct": 10, "align": "center" },
+      "text_logo":   { "x_pct": 80, "y_pct": 92, "w_pct": 15, "h_pct": 5,  "align": "right" },
+      "corner_badge":{ "x_pct": 5,  "y_pct": 25, "w_pct": 15, "h_pct": 15, "align": "center" }
+    }
+  }
+]

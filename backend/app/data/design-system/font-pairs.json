@@ -1,0 +1,50 @@
+[
+  {
+    "id": "anton-montserrat",
+    "heading_font": "Anton",
+    "body_font": "Montserrat",
+    "mood": ["bold", "playful", "promo"]
+  },
+  {
+    "id": "bebas-neue-inter",
+    "heading_font": "Bebas Neue",
+    "body_font": "Inter",
+    "mood": ["modern", "condensed", "sale"]
+  },
+  {
+    "id": "playfair-source-sans",
+    "heading_font": "Playfair Display",
+    "body_font": "Source Sans 3",
+    "mood": ["premium", "editorial", "elegant"]
+  },
+  {
+    "id": "poppins-lato",
+    "heading_font": "Poppins",
+    "body_font": "Lato",
+    "mood": ["friendly", "clean", "versatile"]
+  },
+  {
+    "id": "oswald-open-sans",
+    "heading_font": "Oswald",
+    "body_font": "Open Sans",
+    "mood": ["strong", "retail", "direct"]
+  },
+  {
+    "id": "fraunces-nunito",
+    "heading_font": "Fraunces",
+    "body_font": "Nunito Sans",
+    "mood": ["warm", "crafted", "food"]
+  },
+  {
+    "id": "space-grotesk-dm-sans",
+    "heading_font": "Space Grotesk",
+    "body_font": "DM Sans",
+    "mood": ["tech", "sharp", "confident"]
+  },
+  {
+    "id": "libre-baskerville-karla",
+    "heading_font": "Libre Baskerville",
+    "body_font": "Karla",
+    "mood": ["classic", "trusted", "calm"]
+  }
+]
