@@ -30,6 +30,10 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+import { AgenticPosterLab } from "./social-platform/AgenticPosterLab"
 import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
@@ -2948,8 +2952,16 @@ export function TemplateLibraryView() {
   }
 
   return (
-    <>
-      <PageTitle title="Templates" subtitle="Extract layouts from reference images or build templates with visual, form, JSON, or AI-assisted editors." />
+    <Tabs defaultValue="library" className="w-full">
+      <div className="flex items-center justify-between mb-6">
+        <PageTitle title="Templates" subtitle="Extract layouts from reference images or build templates with visual, form, JSON, or AI-assisted editors." />
+        <TabsList>
+          <TabsTrigger value="library">Library & Builder</TabsTrigger>
+          <TabsTrigger value="lab">Agentic Poster Lab</TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="library" className="m-0 focus-visible:outline-none focus-visible:ring-0 space-y-6">
       {createMode === "manual" ? (
         <TemplateBuilder
           onCancel={() => setCreateMode("choose")}
@@ -3236,7 +3248,11 @@ export function TemplateLibraryView() {
           </div>
         </SheetContent>
       </Sheet>
-    </>
+      </TabsContent>
+      <TabsContent value="lab" className="m-0 focus-visible:outline-none focus-visible:ring-0">
+        <AgenticPosterLab />
+      </TabsContent>
+    </Tabs>
   )
 }
 

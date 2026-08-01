@@ -47,6 +47,7 @@ import {
   Radar,
   Search,
   Settings,
+  FlaskConical,
   Sparkles,
 } from "lucide-react"
 

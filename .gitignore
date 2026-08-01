@@ -30,3 +30,8 @@ next-env.d.ts
 *.log
 .DS_Store
 Thumbs.db
+
+# Diagnostic / generated output
+backend/runs/
+backend/dry_run_output/
+backend/cache/

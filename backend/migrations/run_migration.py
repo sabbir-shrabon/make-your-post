@@ -25,6 +25,7 @@ MIGRATIONS = [
     '13 drop_layers_json_column.sql',
     '14 add_updated_at_to_image_templates.sql',
     '20_expand_background_assets.sql',
+    '23_add_topic_generation_mode.sql',
 ]
 
 def split_sql_statements(sql_script: str) -> list:
@@ -151,26 +152,26 @@ def run_migrations():
         migration_path = os.path.join(migration_dir, migration_file)
         
         if not os.path.exists(migration_path):
-            print(f"⏭️  Skipping {migration_file} (not found)")
+            print(f"Skipping {migration_file} (not found)")
             continue
             
-        print(f"⏳ Running {migration_file}...")
+        print(f"Running {migration_file}...")
         
         try:
-            with open(migration_path, 'r') as f:
+            with open(migration_path, 'r', encoding='utf-8') as f:
                 sql_script = f.read()
             
             statements = split_sql_statements(sql_script)
             with engine.begin() as conn:
                 for statement in statements:
                     conn.execute(text(statement))
-            print(f"✅ {migration_file} completed successfully")
+            print(f"{migration_file} completed successfully")
         except Exception as e:
-            print(f"❌ Error running {migration_file}: {e}")
+            print(f"Error running {migration_file}: {e}")
             # Continue with other migrations instead of failing completely
             continue
 
 if __name__ == "__main__":
-    print("🚀 Starting database migrations...")
+    print("Starting database migrations...")
     run_migrations()
-    print("🎉 All migrations completed!")
+    print("All migrations completed!")

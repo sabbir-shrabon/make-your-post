@@ -7,7 +7,11 @@
       "headline":    { "x_pct": 10, "y_pct": 38, "w_pct": 80, "h_pct": 20, "align": "center" },
       "subheadline": { "x_pct": 15, "y_pct": 60, "w_pct": 70, "h_pct": 10, "align": "center" },
       "text_logo":   { "x_pct": 5,  "y_pct": 88, "w_pct": 30, "h_pct": 8,  "align": "left" },
-      "accent_icon": { "x_pct": 42, "y_pct": 20, "w_pct": 16, "h_pct": 16, "align": "center" }
+      "accent_icon": { "x_pct": 42, "y_pct": 20, "w_pct": 16, "h_pct": 16, "align": "center" },
+      "corner_badge":{ "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" },
+      "bottom_banner":{ "x_pct": 10, "y_pct": 80, "w_pct": 80, "h_pct": 15, "align": "center" },
+      "details_block":{ "x_pct": 10, "y_pct": 72, "w_pct": 80, "h_pct": 6, "align": "center" },
+      "cta_text":     { "x_pct": 10, "y_pct": 78, "w_pct": 80, "h_pct": 6, "align": "center" }
     }
   },
   {
@@ -29,7 +33,9 @@
       "headline":    { "x_pct": 5,  "y_pct": 65, "w_pct": 90, "h_pct": 15, "align": "center" },
       "subheadline": { "x_pct": 5,  "y_pct": 82, "w_pct": 90, "h_pct": 10, "align": "center" },
       "text_logo":   { "x_pct": 5,  "y_pct": 5,  "w_pct": 30, "h_pct": 10, "align": "left" },
-      "accent_icon": { "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" }
+      "accent_icon": { "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" },
+      "details_block":{ "x_pct": 5,  "y_pct": 50, "w_pct": 90, "h_pct": 10, "align": "center" },
+      "cta_text":     { "x_pct": 5,  "y_pct": 92, "w_pct": 90, "h_pct": 5, "align": "center" }
     }
   },
   {
@@ -60,7 +66,9 @@
       "corner_badge":{ "x_pct": 75, "y_pct": 5,  "w_pct": 20, "h_pct": 20, "align": "center" },
       "headline":    { "x_pct": 10, "y_pct": 40, "w_pct": 60, "h_pct": 30, "align": "left" },
       "subheadline": { "x_pct": 10, "y_pct": 75, "w_pct": 60, "h_pct": 15, "align": "left" },
-      "text_logo":   { "x_pct": 10, "y_pct": 10, "w_pct": 30, "h_pct": 10, "align": "left" }
+      "text_logo":   { "x_pct": 10, "y_pct": 10, "w_pct": 30, "h_pct": 10, "align": "left" },
+      "details_block":{ "x_pct": 10, "y_pct": 60, "w_pct": 60, "h_pct": 12, "align": "left" },
+      "cta_text":     { "x_pct": 10, "y_pct": 85, "w_pct": 60, "h_pct": 8, "align": "left" }
     }
   },
   {

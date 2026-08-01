@@ -43,11 +43,50 @@ def _blend_colors(fg: str, bg: str, opacity: float) -> str:
     except Exception:
         return bg
 
-def run_contrast_check(elements: List[Dict], background_color: str, overlay_opacity: float, overlay_color: str = "#000000") -> float:
+def _extract_palette_candidates(palette: dict | None) -> list[str]:
+    """Extract light and dark color variants from a palette for contrast swaps.
+    Returns palette-harmonious colors ordered light-first, dark-second."""
+    if not palette:
+        return []
+
+    candidates = []
+    seen = set()
+
+    def _add(color: str | None):
+        if color and isinstance(color, str) and color.startswith("#") and color not in seen:
+            seen.add(color)
+            candidates.append(color)
+
+    # Primary text color from palette (designed for this palette's background)
+    _add(palette.get("text_color"))
+    _add(palette.get("text_on_dark"))
+    _add(palette.get("text_on_light"))
+
+    # Accent color (may work for subheadlines / emphasis)
+    _add(palette.get("accent_color"))
+    _add(palette.get("accent"))
+
+    # Background colors can serve as dark/light extremes for text
+    for bg_c in (palette.get("background_colors") or []):
+        _add(bg_c)
+
+    return candidates
+
+
+def run_contrast_check(elements: List[Dict], background_color: str, overlay_opacity: float, overlay_color: str = "#000000", palette: dict | None = None) -> float:
     effective_bg = _blend_colors(overlay_color, background_color, overlay_opacity)
-    
-    fixes = []
-    
+
+    # Build candidate colors: palette-harmonious first, then generic fallbacks
+    palette_candidates = _extract_palette_candidates(palette)
+    generic_fallbacks = ["#FFFFFF", "#000000", "#121212", "#F9FAFB", "#1D1D1F"]
+    # Deduplicate while preserving order (palette colors take priority)
+    seen = set()
+    all_candidates = []
+    for c in palette_candidates + generic_fallbacks:
+        if c not in seen:
+            seen.add(c)
+            all_candidates.append(c)
+
     for el in elements:
         if el.get("type") == "text":
             text_color = el.get("color", "#FFFFFF")
@@ -56,7 +95,30 @@ def run_contrast_check(elements: List[Dict], background_color: str, overlay_opac
             threshold = 3.0 if el.get("role") == "headline" else 4.5
             
             if ratio < threshold:
-                # Auto-fix: try to increase opacity
+                # 1. Try text color swap first — palette-harmonious, then generic
+                best_color = text_color
+                best_ratio = ratio
+                
+                for cand in all_candidates:
+                    cand_ratio = _get_contrast_ratio(cand, effective_bg)
+                    if cand_ratio >= threshold:
+                        best_color = cand
+                        best_ratio = cand_ratio
+                        break
+                    elif cand_ratio > best_ratio:
+                        best_color = cand
+                        best_ratio = cand_ratio
+
+                if best_ratio >= threshold:
+                    el["color"] = best_color
+                    continue
+
+                # If text color swap alone wasn't enough, set el color to best candidate so far
+                el["color"] = best_color
+                text_color = best_color
+                ratio = best_ratio
+
+                # 2. Fall back to increasing overlay opacity (last resort)
                 while ratio < threshold and overlay_opacity < 0.85:
                     overlay_opacity += 0.1
                     effective_bg = _blend_colors(overlay_color, background_color, overlay_opacity)
@@ -119,41 +181,94 @@ def run_overlap_check(elements: List[Dict]):
                 nudge_amount = (el1["y"] + el1["h"]) - el2["y"] + 10
                 el2["y"] += nudge_amount
                 
+try:
+    from app.services.poster_renderer import get_font_path
+except ImportError:
+    from backend.app.services.poster_renderer import get_font_path
+
+def _calculate_text_metrics(text: str, font_name: str, font_size: int, max_w: float):
+    font = get_font_path(font_name, font_size)
+    words = text.split()
+    if not words:
+        return 0.0, 0.0
+    
+    def get_str_width(s: str) -> float:
+        try:
+            return font.getlength(s)
+        except Exception:
+            bbox = font.getbbox(s)
+            return float(bbox[2] - bbox[0]) if bbox else len(s) * (font_size * 0.6)
+
+    space_w = get_str_width(" ")
+    
+    lines = 1
+    current_line_w = 0.0
+    max_line_w = 0.0
+    for word in words:
+        word_w = get_str_width(word)
+        if current_line_w + word_w > max_w and current_line_w > 0:
+            lines += 1
+            max_line_w = max(max_line_w, current_line_w)
+            current_line_w = word_w
+        else:
+            if current_line_w > 0:
+                current_line_w += space_w + word_w
+            else:
+                current_line_w = word_w
+    max_line_w = max(max_line_w, current_line_w)
+
+    try:
+        ascent, descent = font.getmetrics()
+        line_height = float(ascent + descent)
+    except Exception:
+        line_height = 0.0
+        
+    if line_height <= 0:
+        line_height = font_size * 1.2
+
+    return lines * line_height, max_line_w
+
+def _truncate_text_to_fit(text: str, font_name: str, font_size: int, max_w: float, max_h: float) -> str:
+    words = text.split()
+    if not words:
+        return text
+
+    # Word-level truncation
+    for i in range(len(words) - 1, -1, -1):
+        test_text = " ".join(words[:i+1]) + "..."
+        h, w = _calculate_text_metrics(test_text, font_name, font_size, max_w)
+        if h <= max_h and w <= max_w:
+            return test_text
+            
+    # Character-level truncation on the first word
+    first_word = words[0]
+    for i in range(len(first_word) - 1, 0, -1):
+        test_text = first_word[:i] + "..."
+        h, w = _calculate_text_metrics(test_text, font_name, font_size, max_w)
+        if h <= max_h and w <= max_w:
+            return test_text
+            
+    return "..."
+
 def run_text_fit_check(elements: List[Dict]):
-    # Approximation: average char width is about 0.6 * font_size
     for el in elements:
         if el.get("type") == "text":
             text = el.get("content", "")
             w, h = el.get("w", 0), el.get("h", 0)
             font_size = el.get("font_size", 40)
+            font_name = el.get("font_name", "arial")
             
-            # Simple word wrap calculation
-            words = text.split()
-            lines = 1
-            current_line_width = 0
-            for word in words:
-                word_width = len(word) * (font_size * 0.6)
-                if current_line_width + word_width > w:
-                    lines += 1
-                    current_line_width = word_width
-                else:
-                    current_line_width += word_width + (font_size * 0.3) # space
+            total_height, max_line_w = _calculate_text_metrics(text, font_name, font_size, w)
             
-            total_height = lines * font_size * 1.2 # 1.2 line height
-            
-            # Shrink font if too tall
-            while total_height > h and font_size > 12:
+            # Shrink font if too tall or too wide
+            while (total_height > h or max_line_w > w) and font_size > 12:
                 font_size = int(font_size * 0.9) # 10% decrement
-                lines = 1
-                current_line_width = 0
-                for word in words:
-                    word_width = len(word) * (font_size * 0.6)
-                    if current_line_width + word_width > w:
-                        lines += 1
-                        current_line_width = word_width
-                    else:
-                        current_line_width += word_width + (font_size * 0.3)
-                total_height = lines * font_size * 1.2
+                total_height, max_line_w = _calculate_text_metrics(text, font_name, font_size, w)
+                
+            if (total_height > h or max_line_w > w) and font_size <= 12:
+                logger.warning(f"Ellipsis truncation triggered for text slot '{el.get('role', 'unknown')}'. Text was too long even at minimum font size: '{text}'")
+                text = _truncate_text_to_fit(text, font_name, font_size, w, h)
+                el["content"] = text
                 
             el["font_size"] = font_size
 
@@ -163,13 +278,14 @@ def validate_and_fix_composition(
     canvas_h: int, 
     background_color: str, 
     overlay_opacity: float, 
-    overlay_color: str = "#000000"
+    overlay_color: str = "#000000",
+    palette: dict | None = None,
 ) -> float:
     """
     Runs deterministic checks and applies auto-fixes in place.
     Returns the updated overlay_opacity.
     """
-    overlay_opacity = run_contrast_check(elements, background_color, overlay_opacity, overlay_color)
+    overlay_opacity = run_contrast_check(elements, background_color, overlay_opacity, overlay_color, palette=palette)
     run_safe_zone_check(elements, canvas_w, canvas_h)
     run_text_fit_check(elements)
     run_overlap_check(elements)

@@ -1,0 +1,11 @@
+{
+  "name": "satori-renderer",
+  "version": "1.0.0",
+  "description": "Satori HTML/CSS to SVG & PNG renderer for AutoPoster",
+  "main": "render.js",
+  "type": "commonjs",
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.12.1"
+  }
+}

@@ -335,6 +335,7 @@ class AIPersona(Base):
     posting_time_slots: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     priority_level: Mapped[str] = mapped_column(String, default="Normal", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    topic_generation_mode: Mapped[str] = mapped_column(String, default="creative", nullable=False)
     learning_mode_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     minimum_engagement_threshold: Mapped[float] = mapped_column(Numeric(10, 4), default=0, nullable=False)
     learned_patterns_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -356,6 +357,7 @@ class AIPersona(Base):
     image_max_wait_seconds: Mapped[int] = mapped_column(Integer, default=120, nullable=False)
     template_image_generation_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     template_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -431,6 +433,9 @@ class MediaLibrary(Base):
     generation_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Auto-generated caption for full-text search (see migration 22).
+    # caption_tsv is a GENERATED ALWAYS column — not mapped here, queried via raw SQL.
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_used: Mapped[bool] = mapped_column(Boolean, default=False, index=True, nullable=False)
     used_in_post_id: Mapped[int | None] = mapped_column(ForeignKey("post_logs.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -504,6 +509,9 @@ class TemplateBackgroundAsset(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     type: Mapped[str] = mapped_column(String, nullable=False)
     label: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Auto-generated caption for full-text search (see migration 22).
+    # caption_tsv is a GENERATED ALWAYS column — not mapped here, queried via raw SQL.
+    caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     preview_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

@@ -93,6 +93,7 @@ from app.routers.brand_automation import router as brand_automation_router
 from app.routers.schedule_routes import router as schedule_routes_router
 from app.routers.stock_photos import router as stock_photos_router
 from app.routers.cat_photos import router as cat_photos_router
+from app.routers.poster_studio import router as poster_studio_router
 from app.mistral_service import (
     suggest_prompt_improvement,
     synthesize_learned_strategy,
@@ -421,6 +422,7 @@ app.include_router(brand_automation_router)
 app.include_router(schedule_routes_router)
 app.include_router(stock_photos_router)
 app.include_router(cat_photos_router)
+app.include_router(poster_studio_router)
 
 # ---------------------------------------------------------------------------
 # CORS — Dynamic, env-driven origin allowlist

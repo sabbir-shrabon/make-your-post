@@ -1,0 +1,109 @@
+"""
+poster_studio.py
+----------------
+Poster Assembly Lab — backend endpoint.
+
+POST /api/poster/assemble-trace
+    Runs the same generatePoster() orchestrator that will power
+    automated scheduled posts, but returns the full resolution trace
+    as JSON instead of committing a post or returning a PNG.
+
+    The Assembly Lab UI uses this trace to render the poster live
+    in the browser and inspect every AI decision.
+"""
+
+from __future__ import annotations
+
+import time
+import logging
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.database import get_db
+from app import models
+from app.services.poster_orchestrator import generatePoster
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/poster", tags=["poster-studio"])
+
+# ---------------------------------------------------------------------------
+# Canvas dimensions per aspect ratio
+# ---------------------------------------------------------------------------
+
+RATIO_DIMENSIONS: dict[str, tuple[int, int]] = {
+    "1:1":  (1080, 1080),
+    "16:9": (1920, 1080),
+    "4:5":  (1080, 1350),
+    "9:16": (1080, 1920),
+}
+
+
+# ---------------------------------------------------------------------------
+# Request / Response schemas
+# ---------------------------------------------------------------------------
+
+class AssembleTraceRequest(BaseModel):
+    topic: str
+    persona_id: Optional[int] = None
+    aspect_ratio: Literal["1:1", "16:9", "4:5", "9:16"] = "1:1"
+
+
+# ---------------------------------------------------------------------------
+# Endpoint
+# ---------------------------------------------------------------------------
+
+@router.post("/assemble-trace")
+async def assemble_trace(
+    body: AssembleTraceRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Run the poster generation pipeline and return a full resolution trace.
+
+    This calls generatePoster() — the exact same function that will power
+    automated scheduled posts once the render step is wired up.
+
+    Returns structured JSON (not a PNG) that the Assembly Lab UI uses to:
+      - Animate the poster layers building up on the canvas
+      - Show per-step timing in the pipeline timeline
+      - Power the asset inspector (description, resolved ID, confidence, candidates)
+    """
+    if not body.topic.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="topic must not be empty",
+        )
+
+    canvas_w, canvas_h = RATIO_DIMENSIONS[body.aspect_ratio]
+
+    t_start = time.perf_counter()
+
+    try:
+        result = await generatePoster(
+            topic=body.topic,
+            persona_id=body.persona_id,
+            db=db,
+            user_id=current_user.id,
+        )
+    except Exception as exc:
+        logger.error("assemble-trace failed for topic=%r: %s", body.topic, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Pipeline failed: {exc}",
+        )
+
+    total_ms = int((time.perf_counter() - t_start) * 1000)
+
+    return {
+        **result,
+        "aspect_ratio": body.aspect_ratio,
+        "canvas_w": canvas_w,
+        "canvas_h": canvas_h,
+        "total_ms": total_ms,
+    }

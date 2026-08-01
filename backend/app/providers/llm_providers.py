@@ -111,17 +111,35 @@ def generate_text(
 ) -> str | None:
     """Route to the correct provider and return the generated text."""
     provider = provider_name.strip().lower()
+
+    if provider in ("gemini", "google", "google_gemini"):
+        try:
+            res = _generate_gemini(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images)
+            if res:
+                return res
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Gemini provider call failed (%s). Falling back to Mistral API...", exc)
+            if MISTRAL_API_KEY:
+                mistral_model = "pixtral-12b-2409" if images else (MISTRAL_MODEL or "mistral-small-latest")
+                return _generate_mistral(prompt, system_prompt, mistral_model, MISTRAL_API_KEY, temperature, max_tokens, images, response_format)
+            raise
+
     if provider in ("mistral", "mistralai"):
         return _generate_mistral(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images, response_format)
     if provider in ("openai", "open_ai"):
         return _generate_openai(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images, response_format)
     if provider in ("anthropic", "claude"):
         return _generate_anthropic(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images)
-    if provider in ("gemini", "google", "google_gemini"):
-        return _generate_gemini(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images)
     if provider in ("openrouter",):
         return _generate_openrouter(prompt, system_prompt, model_name, api_key, temperature, max_tokens, images, response_format)
+
+    if MISTRAL_API_KEY:
+        mistral_model = "pixtral-12b-2409" if images else (MISTRAL_MODEL or "mistral-small-latest")
+        return _generate_mistral(prompt, system_prompt, mistral_model, MISTRAL_API_KEY, temperature, max_tokens, images, response_format)
+
     raise ValueError(f"Unsupported LLM provider: {provider_name}")
+
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +366,7 @@ def _generate_gemini(
     images: list[str] | None = None,
 ) -> str | None:
     import google.generativeai as genai  # type: ignore
+    import logging
 
     effective_key = api_key or GEMINI_API_KEY
     if not effective_key:
@@ -390,7 +409,6 @@ def _generate_gemini(
                 parts.append({"file_data": {"file_uri": image_url}})
         contents = parts
 
-
     try:
         response = model.generate_content(
             contents,
@@ -398,6 +416,21 @@ def _generate_gemini(
         )
     except Exception as exc:
         message = str(exc)
+        if MISTRAL_API_KEY:
+            logging.getLogger(__name__).warning(
+                "Gemini API error (%s). Falling back to Mistral API using MISTRAL_API_KEY...", message
+            )
+            mistral_model = "pixtral-12b-2409" if images else (MISTRAL_MODEL or "mistral-small-latest")
+            return _generate_mistral(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model_name=mistral_model,
+                api_key=MISTRAL_API_KEY,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                images=images,
+            )
+
         if "API_KEY_INVALID" in message or "API key not valid" in message:
             raise RuntimeError(
                 "Gemini API key is invalid. Create a new key at https://aistudio.google.com/apikey "
@@ -413,6 +446,18 @@ def _generate_gemini(
     feedback = getattr(response, "prompt_feedback", None)
     block_reason = getattr(feedback, "block_reason", None) if feedback else None
     if block_reason:
+        if MISTRAL_API_KEY:
+            logging.getLogger(__name__).warning("Gemini blocked request (%s). Falling back to Mistral API...", block_reason)
+            mistral_model = "pixtral-12b-2409" if images else (MISTRAL_MODEL or "mistral-small-latest")
+            return _generate_mistral(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model_name=mistral_model,
+                api_key=MISTRAL_API_KEY,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                images=images,
+            )
         raise RuntimeError(f"Gemini blocked the request: {block_reason}")
 
     # Check for content filtering on the response (finish_reason indicates if response was blocked)

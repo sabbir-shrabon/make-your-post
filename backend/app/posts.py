@@ -45,6 +45,7 @@ def _persona_post_prompt(
     topic_hint: str | None = None,
     learning_hint: str | None = None,
     prompt_template_override: str | None = None,
+    angle_hint: str | None = None,
 ) -> tuple[str, str]:
     """Build the post-generation prompt used by the user's AI persona."""
     system_prompt_parts = [
@@ -119,6 +120,8 @@ def _persona_post_prompt(
         instructions.append(f"Do not repeat these recent topics: {', '.join(recent_topics)}.")
     if topic_hint:
         instructions.append(f"Focus this post on: {topic_hint.strip()}.")
+    if angle_hint:
+        instructions.append(f"Incorporate this current angle/context: {angle_hint.strip()}.")
     if learning_hint:
         instructions.append(learning_hint.strip())
     instructions.append("Return only the Facebook post text. No labels, no explanation.")
@@ -133,7 +136,20 @@ def generate_persona_post_with_user_model(
     topic_hint: str | None = None,
     learning_hint: str | None = None,
     prompt_template_override: str | None = None,
+    angle_hint: str | None = None,
 ) -> str:
+    logger = logging.getLogger(__name__)
+
+    if angle_hint is None and getattr(settings, "topic_generation_mode", "creative") == "grounded":
+        logger.info(f"Topic generation mode is grounded. Researching angle for niche: {settings.niche}")
+        from app.services.topic_research_resolver import research_topic_angle
+        fetched_angle, source_log = research_topic_angle(settings.niche, settings.user_id, db)
+        if fetched_angle:
+            angle_hint = fetched_angle
+            logger.info(f"[Diagnostics] {source_log}")
+        else:
+            logger.warning("Topic research returned no result. Falling back to creative mode.")
+
     system_prompt, prompt = _persona_post_prompt(
         settings,
         db,
@@ -141,10 +157,10 @@ def generate_persona_post_with_user_model(
         topic_hint=topic_hint,
         learning_hint=learning_hint,
         prompt_template_override=prompt_template_override,
+        angle_hint=angle_hint,
     )
     temperature = max(0.1, min(settings.creativity_level / 10, 1.0))
     
-    logger = logging.getLogger(__name__)
     prompt_preview = (system_prompt + "\n\n" + prompt).replace("\n", " ")
     logger.info("[LLM Prompt Preview] persona_id=%s prompt=%s", settings.id, prompt_preview[:100])
     

@@ -4,6 +4,7 @@ import base64
 from pydantic import BaseModel
 from typing import Optional, Literal
 from app.providers.llm_providers import generate_text
+from app.config import MISTRAL_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,11 @@ class VisionCriticResponse(BaseModel):
 
 def run_vision_critic(
     image_bytes: bytes,
-    model: str = "gemini-1.5-pro", # Must be vision capable
-    provider: str = "gemini",
+    model: str = "pixtral-12b-2409" if MISTRAL_API_KEY else "gemini-2.0-flash",
+    provider: str = "mistral" if MISTRAL_API_KEY else "gemini",
     api_key: str = ""
 ) -> VisionCriticResponse:
+
     
     b64_image = base64.b64encode(image_bytes).decode('utf-8')
     mime_type = "image/png"

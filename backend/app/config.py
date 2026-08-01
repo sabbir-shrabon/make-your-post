@@ -40,11 +40,6 @@ CRON_SECRET = os.getenv("CRON_SECRET", "your_cron_secret_here")
 
 
 def _normalize_database_url(database_url: str) -> str:
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
-
     parsed_url = urlparse(database_url)
     if (
         parsed_url.scheme.startswith("postgresql")
