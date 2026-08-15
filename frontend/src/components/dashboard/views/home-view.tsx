@@ -9,22 +9,31 @@ import {
 import { PageTitle, PageMini, PageStatusBadge, formatDate, todayLabel, isPastScheduledSlot, slotStatusClass, MiniBars, emptySchedule, scheduleDayLabel, activeDaysToAbbrev, abbrevDaysToFull, scheduleFromLegacyPersona, LearnedInsightsPanel, ConnectEmpty, FacebookConnectButton, Stat, PostRow, Empty, SkeletonPage, badgeClass } from "@/components/dashboard/shared/dashboard-ui"
 
 import Link from "next/link"
-import { RefreshCw, Loader2, Sparkles, PenLine, Radar, Image as ImageIcon, ArrowRight, Lightbulb, TrendingUp } from "lucide-react"
+import { RefreshCw, Loader2, Sparkles, PenLine, Radar, Image as ImageIcon, ArrowRight, Lightbulb, TrendingUp, Search } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
-
+import { useApp } from "@/contexts/app-context"
 
 
 export function HomeView({ pages, onConnected, timezone }: { pages: PageConnection[]; posts: Post[]; onConnected: () => void; timezone: string }) {
-  const [dashboardData, setDashboardData] = React.useState<{ todays_slots: any[], recent_posts: any[] } | null>(null)
+  const { dashboardData: contextDashboardData } = useApp()
+  const [dashboardData, setDashboardData] = React.useState<{ todays_slots: any[], recent_posts: any[] } | null>(contextDashboardData)
   const [trackerData, setTrackerData] = React.useState<TrackerDashboard | null>(null)
-  const [loadingDashboard, setLoadingDashboard] = React.useState(true)
+  const [loadingDashboard, setLoadingDashboard] = React.useState(!contextDashboardData)
   const [dashboardError, setDashboardError] = React.useState<string | null>(null)
   const [retrying, setRetrying] = React.useState<string | null>(null)
+
+  // Synchronize if AppContext updates
+  React.useEffect(() => {
+    if (contextDashboardData) {
+      setDashboardData(contextDashboardData)
+      setLoadingDashboard(false)
+    }
+  }, [contextDashboardData])
   
   const fetchDashboard = React.useCallback(async () => {
     setDashboardError(null)
@@ -48,11 +57,17 @@ export function HomeView({ pages, onConnected, timezone }: { pages: PageConnecti
   )
 
   React.useEffect(() => {
-    fetchDashboard()
-    const intervalMs = hasActiveSlots ? 5000 : 30000
+    if (!contextDashboardData) {
+      fetchDashboard()
+    } else {
+      api.get<TrackerDashboard>("/api/tracker")
+        .then(res => setTrackerData(res.data))
+        .catch(() => null)
+    }
+    const intervalMs = hasActiveSlots ? 15000 : 30000
     const interval = setInterval(fetchDashboard, intervalMs)
     return () => clearInterval(interval)
-  }, [fetchDashboard, hasActiveSlots])
+  }, [fetchDashboard, hasActiveSlots, contextDashboardData])
 
   async function retrySlot(slotId: string) {
     setRetrying(slotId)
@@ -161,8 +176,8 @@ export function HomeView({ pages, onConnected, timezone }: { pages: PageConnecti
       </Card>
 
       {/* Quick Actions Bar */}
-      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-        <Link href="/dashboard/create" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-blue-500 hover:shadow-md">
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-5">
+        <Link href="/dashboard/create" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-blue-500 hover:shadow-xs">
           <div className="rounded-md bg-blue-50 p-2.5 text-blue-700">
             <PenLine className="size-5" />
           </div>
@@ -171,31 +186,40 @@ export function HomeView({ pages, onConnected, timezone }: { pages: PageConnecti
             <p className="text-xs text-slate-500">Draft &amp; schedule content</p>
           </div>
         </Link>
-        <Link href="/dashboard/style-analyzer" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-purple-500 hover:shadow-md">
+        <Link href="/dashboard/ai-settings" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-purple-500 hover:shadow-xs">
           <div className="rounded-md bg-purple-50 p-2.5 text-purple-700">
             <Sparkles className="size-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900">Style Analyzer</p>
-            <p className="text-xs text-slate-500">Extract persona from posts</p>
+            <p className="text-sm font-semibold text-slate-900">AI Personas</p>
+            <p className="text-xs text-slate-500">Prompts &amp; Brand tone</p>
           </div>
         </Link>
-        <Link href="/dashboard/page-tracker" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-indigo-500 hover:shadow-md">
+        <Link href="/dashboard/create?tab=style" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-indigo-500 hover:shadow-xs">
           <div className="rounded-md bg-indigo-50 p-2.5 text-indigo-700">
+            <Search className="size-5" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Style Analyzer</p>
+            <p className="text-xs text-slate-500">Extract persona DNA</p>
+          </div>
+        </Link>
+        <Link href="/dashboard/create?tab=tracker" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-teal-500 hover:shadow-xs">
+          <div className="rounded-md bg-teal-50 p-2.5 text-teal-700">
             <Radar className="size-5" />
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-900">Page Tracker</p>
-            <p className="text-xs text-slate-500">Monitor competitor trends</p>
+            <p className="text-xs text-slate-500">Monitor viral trends</p>
           </div>
         </Link>
-        <Link href="/dashboard/templates" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-sm transition hover:border-emerald-500 hover:shadow-md">
+        <Link href="/dashboard/templates" className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3.5 shadow-2xs transition hover:border-emerald-500 hover:shadow-xs">
           <div className="rounded-md bg-emerald-50 p-2.5 text-emerald-700">
             <ImageIcon className="size-5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-slate-900">Poster Workbench</p>
-            <p className="text-xs text-slate-500">Visuals &amp; Templates</p>
+            <p className="text-sm font-semibold text-slate-900">Poster Templates</p>
+            <p className="text-xs text-slate-500">Visuals &amp; slots</p>
           </div>
         </Link>
       </div>

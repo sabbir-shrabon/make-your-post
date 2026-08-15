@@ -122,9 +122,10 @@ def _generate_single_candidate(
     badge_hint: str | None = None,
     visual_asset_query: str | None = None,
     mood_hint: str | None = None,
+    template_id: str | None = None,
 ) -> dict:
     run_id = str(uuid.uuid4())
-    logger.info("[run=%s][Candidate #%d] Running AI Art Director (temp=%.2f)...", run_id, candidate_index, temperature)
+    logger.info("[run=%s][Candidate #%d] Running AI Art Director (temp=%.2f, template=%s)...", run_id, candidate_index, temperature, template_id)
     try:
         ad_output = run_art_director(
             topic=topic,
@@ -139,6 +140,7 @@ def _generate_single_candidate(
             subheadline_hint=subheadline_hint,
             badge_hint=badge_hint,
             visual_asset_query=visual_asset_query,
+            template_id=template_id,
         )
     except Exception as exc:
         logger.error("[run=%s][Candidate #%d] Art Director failed: %s", run_id, candidate_index, exc)
@@ -343,6 +345,7 @@ async def generatePoster(
     mood_hint: str | None = None,
     brand_palette_id: str | None = None,
     brand_font_pair_id: str | None = None,
+    template_id: str | None = None,
 ):
     persona = None
     if persona_id:
@@ -354,7 +357,7 @@ async def generatePoster(
     num_candidates = candidate_count or (getattr(persona, "candidate_count", 3) if persona else 3) or 3
     num_candidates = max(1, min(num_candidates, 5))
 
-    logger.info("Generating %d poster candidate(s)...", num_candidates)
+    logger.info("Generating %d poster candidate(s) (template=%s)...", num_candidates, template_id)
     if use_news_grounding:
         logger.info("use_news_grounding requested, but Poster Studio has no dedicated Google News API text-generation path wired; skipping.")
 
@@ -378,6 +381,7 @@ async def generatePoster(
             badge_hint=badge_hint,
             visual_asset_query=visual_asset_query,
             mood_hint=mood_hint,
+            template_id=template_id,
         )
         candidates.append(cand)
 

@@ -267,39 +267,82 @@ def run_expand_to_fill_text_sizing(elements: List[Dict], max_headline_size: int 
                     if role == "headline" and current_font_size < best_size * 0.8:
                         el["font_size"] = best_size
 
-def run_overlap_check(elements: List[Dict]):
-    """
-    P4: Selective Intentional Overlap.
-    Allows badges, stickers, and accent icons with `allow_overlap=True` or
-    corner badge slots to intentionally break boundaries for modern editorial designs,
-    while resolving unintended text-on-text collisions.
-    """
-    # Sort elements by priority (text is high priority, icons/shapes are lower)
-    def get_priority(el):
-        t = el.get("type", "shape")
-        if t == "text": return 2
-        if t == "logo": return 1
-        return 0 # shape/icon
-        
-    sorted_elements = sorted(elements, key=get_priority, reverse=True)
-    
-    for i in range(len(sorted_elements)):
-        for j in range(i + 1, len(sorted_elements)):
-            el1, el2 = sorted_elements[i], sorted_elements[j]
+def clean_unpopulated_elements(elements: List[Dict]) -> List[Dict]:
+    """Drops unpopulated placeholder shapes/badges that have no text, icon, or explicit visual asset."""
+    valid_elements = []
+    for el in elements:
+        el_type = str(el.get("type", "")).lower()
+        if el_type == "shape":
+            # If shape has no resolved vector, no description, and opacity is default, skip unless it's a card/backdrop
+            role = str(el.get("role", "")).lower()
+            if role in ("background", "contrast_overlay", "backdrop", "card", "card_bg", "framed_card"):
+                valid_elements.append(el)
+            elif el.get("shape_id") or el.get("resolved") or el.get("description"):
+                valid_elements.append(el)
+            else:
+                logger.info(f"Dropping unpopulated empty shape element: slot={el.get('slot')}")
+        elif el_type == "badge":
+            badge_text = str(el.get("badge_text") or el.get("content") or "").strip()
+            badge_icon = el.get("badge_icon") or el.get("resolved")
+            if not badge_text and not badge_icon:
+                logger.info(f"Dropping unpopulated badge element with no text or icon: slot={el.get('slot')}")
+            else:
+                valid_elements.append(el)
+        elif el_type == "text":
+            content = str(el.get("content") or "").strip()
+            if content:
+                valid_elements.append(el)
+        else:
+            valid_elements.append(el)
+    return valid_elements
 
-            # P4: Allow intentional overlap if flagged or if corner badge/accent
-            if el1.get("allow_overlap") or el2.get("allow_overlap"):
-                continue
-            if el1.get("slot") in ("corner_badge", "accent_icon") or el2.get("slot") in ("corner_badge", "accent_icon"):
-                continue
-            if el1.get("role") in ("corner_badge", "accent_icon") or el2.get("role") in ("corner_badge", "accent_icon"):
-                continue
 
-            # Only nudge if both are text elements colliding directly
-            if el1.get("type") == "text" and el2.get("type") == "text":
-                if _rect_overlap(el1, el2):
-                    nudge_amount = (el1["y"] + el1["h"]) - el2["y"] + 8
-                    el2["y"] += nudge_amount
+def run_overlap_check(elements: List[Dict], canvas_h: int = 1080):
+    """
+    Deterministic Flow Reflow:
+    Sorts elements vertically and resolves collisions by pushing subsequent elements down
+    with guaranteed minimum spacing (gap = 14px), then proportionally scaling if bottom overflows.
+    """
+    # Filter out background elements and intentional overlays
+    flow_elements = []
+    for el in elements:
+        role = str(el.get("role", "")).lower()
+        slot = str(el.get("slot", "")).lower()
+        el_type = str(el.get("type", "")).lower()
+        if el.get("allow_overlap") or slot in ("corner_badge", "accent_icon", "background", "backdrop") or role in ("background", "backdrop", "contrast_overlay"):
+            continue
+        if el_type in ("text", "shape", "badge"):
+            flow_elements.append(el)
+
+    # Sort from top to bottom
+    flow_elements.sort(key=lambda x: (x.get("y", 0), x.get("x", 0)))
+    gap = 14
+
+    for i in range(len(flow_elements)):
+        for j in range(i + 1, len(flow_elements)):
+            el1 = flow_elements[i]
+            el2 = flow_elements[j]
+
+            # If they horizontally overlap or share central vertical column
+            h_overlap = not (el1["x"] >= el2["x"] + el2["w"] or el1["x"] + el1["w"] <= el2["x"])
+            if h_overlap:
+                min_allowed_y = el1["y"] + el1["h"] + gap
+                if el2["y"] < min_allowed_y:
+                    diff = min_allowed_y - el2["y"]
+                    el2["y"] = min_allowed_y
+
+    # If any element pushed beyond 92% of canvas height, compress spacing proportionally
+    max_allowed_bottom = canvas_h * 0.93
+    for el in flow_elements:
+        bottom = el["y"] + el["h"]
+        if bottom > max_allowed_bottom:
+            overflow = bottom - max_allowed_bottom
+            # Compress height and font size slightly
+            if el.get("type") == "text" and "font_size" in el:
+                el["font_size"] = max(14, int(el["font_size"] * 0.88))
+            el["h"] = max(20, int(el["h"] * 0.88))
+            el["y"] = max(canvas_h * 0.05, el["y"] - overflow)
+
 
 def run_text_fit_check(elements: List[Dict]):
     for el in elements:
@@ -325,6 +368,7 @@ def run_text_fit_check(elements: List[Dict]):
                 
             el["font_size"] = font_size
 
+
 def validate_and_fix_composition(
     elements: List[Dict], 
     canvas_w: int, 
@@ -335,23 +379,29 @@ def validate_and_fix_composition(
     palette: dict | None = None,
 ) -> float:
     """
-    Art Director Composition Intelligence:
-    1. Safe Zone Enforcment (5% margin)
+    Canva-Grade Composition Intelligence:
+    1. Clean unpopulated / empty placeholder elements.
     2. P1: Expand-to-Fill Dynamic Text Sizing (binary search fitting)
-    3. P4: Overlap verification with intentional overlap support
-    4. P2: WCAG 2.1 AA Color Harmony contrast verification
+    3. Multi-pass Vertical Flow Reflow (Zero Text Collisions)
+    4. Safe Zone Enforcment (5% margin)
+    5. P2: WCAG 2.1 AA Color Harmony contrast verification
     """
-    # 1. Expand to fill and fit check
+    # 1. Clean empty elements in place
+    cleaned = clean_unpopulated_elements(elements)
+    elements.clear()
+    elements.extend(cleaned)
+
+    # 2. Expand to fill and fit check
     run_expand_to_fill_text_sizing(elements)
     run_text_fit_check(elements)
 
-    # 2. Overlap checks
-    run_overlap_check(elements)
+    # 3. Deterministic Flow Reflow
+    run_overlap_check(elements, canvas_h=canvas_h)
 
-    # 3. Safe zone margins
+    # 4. Safe zone margins
     run_safe_zone_check(elements, canvas_w, canvas_h)
 
-    # 4. Color harmony & contrast checking
+    # 5. Color harmony & contrast checking
     final_opacity = run_contrast_check(
         elements=elements,
         background_color=background_color,
@@ -361,4 +411,5 @@ def validate_and_fix_composition(
     )
 
     return final_opacity
+
 

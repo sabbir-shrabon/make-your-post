@@ -14,6 +14,7 @@ import urllib.request
 import urllib.parse
 from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -84,6 +85,17 @@ def list_fonts():
         "installed_fonts": installed,
         "font_pairs": pairs,
     }
+
+
+@router.get("/file/{filename}")
+def get_font_file(filename: str):
+    """Serve font binary for @font-face browser preview."""
+    target = os.path.join(FONTS_DIR, filename)
+    if os.path.exists(target):
+        ext = os.path.splitext(filename)[1].lower()
+        media_type = "font/ttf" if ext == ".ttf" else ("font/otf" if ext == ".otf" else "font/woff2")
+        return FileResponse(target, media_type=media_type)
+    raise HTTPException(status_code=404, detail="Font file not found")
 
 
 @router.post("/upload")

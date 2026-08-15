@@ -1,6 +1,6 @@
 from datetime import datetime, date, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app import models
 from app.database import get_db
@@ -39,7 +39,7 @@ def _verify_persona_owner(db: Session, persona_id: int, user_id: int) -> models.
 
 
 @router.get("/api/personas/{persona_id}/schedule")
-async def get_persona_schedule(
+def get_persona_schedule(
     persona_id: int,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -146,7 +146,7 @@ async def retry_scheduled_slot(
     }
 
 @router.delete("/api/personas/{persona_id}/schedule")
-async def delete_persona_schedule(
+def delete_persona_schedule(
     persona_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -189,23 +189,23 @@ def _facebook_post_url(post: models.PostLog) -> str | None:
     return post.link_url
 
 
-def _effective_slot_status(slot: models.ScheduledSlot, db: Session) -> str:
+def _effective_slot_status(slot: models.ScheduledSlot, db: Session, post_map: dict | None = None) -> str:
     """Return the real status — recover from desync where FB publish succeeded but slot wasn't updated."""
     if slot.status == "published":
         return "published"
     if slot.post_id:
-        post = db.get(models.PostLog, slot.post_id)
+        post = post_map.get(slot.post_id) if post_map is not None else db.get(models.PostLog, slot.post_id)
         if post and post.status in ("published", "success"):
             return "published"
     if slot.status == "generating" and slot.post_id:
-        post = db.get(models.PostLog, slot.post_id)
+        post = post_map.get(slot.post_id) if post_map is not None else db.get(models.PostLog, slot.post_id)
         if post and post.facebook_post_id:
             return "published"
     return slot.status
 
 
 @router.get("/api/dashboard")
-async def get_dashboard(
+def get_dashboard(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -216,6 +216,7 @@ async def get_dashboard(
 
     todays_slots = (
         db.query(models.ScheduledSlot)
+        .options(joinedload(models.ScheduledSlot.persona))
         .join(models.AIPersona)
         .filter(
             models.AIPersona.user_id == current_user.id,
@@ -226,6 +227,12 @@ async def get_dashboard(
         .limit(50)
         .all()
     )
+
+    slot_post_ids = [slot.post_id for slot in todays_slots if slot.post_id]
+    slot_post_map = {}
+    if slot_post_ids:
+        for p in db.query(models.PostLog).filter(models.PostLog.id.in_(slot_post_ids)).all():
+            slot_post_map[p.id] = p
     
     recent_posts = db.query(models.PostLog).filter(
         models.PostLog.user_id == current_user.id,
@@ -235,9 +242,15 @@ async def get_dashboard(
         models.PostLog.created_at.desc()
     ).limit(10).all()
     
+    persona_ids = list({p.ai_persona_id for p in recent_posts if p.ai_persona_id})
+    persona_map = {}
+    if persona_ids:
+        for p in db.query(models.AIPersona).filter(models.AIPersona.id.in_(persona_ids)).all():
+            persona_map[p.id] = p
+
     recent_post_items = []
     for post in recent_posts:
-        persona = db.get(models.AIPersona, post.ai_persona_id) if post.ai_persona_id else None
+        persona = persona_map.get(post.ai_persona_id) if post.ai_persona_id else None
         published_at = post.published_at or post.posted_at or post.created_at
         if published_at and published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
@@ -264,7 +277,7 @@ async def get_dashboard(
                     if slot.scheduled_at
                     else None
                 ),
-                "status": _effective_slot_status(slot, db),
+                "status": _effective_slot_status(slot, db, slot_post_map),
                 "error_message": slot.error_message,
                 "retry_count": slot.retry_count,
             }
@@ -275,7 +288,7 @@ async def get_dashboard(
 
 
 @router.get("/api/scheduled-slots")
-async def get_scheduled_slots(
+def get_scheduled_slots(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
@@ -284,6 +297,7 @@ async def get_scheduled_slots(
 
     persona_slots = (
         db.query(models.ScheduledSlot)
+        .options(joinedload(models.ScheduledSlot.persona))
         .join(models.AIPersona)
         .filter(
             models.AIPersona.user_id == current_user.id,

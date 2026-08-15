@@ -39,7 +39,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const refreshPosts = React.useCallback(async () => {
     try {
-      const res = await api.get("/posts", { params: { limit: 50 } })
+      const res = await api.get("/posts", { params: { limit: 20 } })
       setPosts(res.data)
     } catch {
       console.warn("[AppContext] Failed to fetch posts")

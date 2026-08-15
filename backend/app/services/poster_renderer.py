@@ -210,13 +210,32 @@ logger = logging.getLogger(__name__)
 def render_shape_layer(el: Dict, palette: Dict) -> Image.Image:
     w = int(max(10, float(el.get("w", 200) or 200)))
     h = int(max(10, float(el.get("h", 100) or 100)))
-    shape_kind = str(el.get("resolved") or el.get("description") or "rectangle").lower()
+    shape_kind = str(el.get("shape_id") or el.get("resolved") or el.get("description") or "rectangle").lower().replace("_", "-")
 
-    hex_color = palette.get("accent") or palette.get("primary") or "#3b82f6"
-    if isinstance(hex_color, list):
-        hex_color = hex_color[0]
-    r, g, b, _ = parse_hex_color(str(hex_color), default=(59, 130, 246, 255))
-    
+    accent_hex = palette.get("accent_color") or palette.get("accent") or palette.get("primary") or "#3b82f6"
+    if isinstance(accent_hex, list):
+        accent_hex = accent_hex[0]
+    primary_hex = palette.get("primary") or "#1e293b"
+    if isinstance(primary_hex, list):
+        primary_hex = primary_hex[0]
+    text_on_dark = palette.get("text_on_dark", "#FFFFFF")
+
+    # 1. Check if shape exists in our curated Vector Assets catalog (SVGs)
+    from app.services.vector_assets import get_vector_asset_svg, rasterize_svg_to_pil
+    svg_code = get_vector_asset_svg(shape_kind, {
+        "accent": accent_hex,
+        "primary": primary_hex,
+        "text_on_dark": text_on_dark,
+        "opacity": el.get("opacity", 1.0),
+    })
+
+    if svg_code:
+        pil_svg = rasterize_svg_to_pil(svg_code, w, h)
+        if pil_svg:
+            return pil_svg
+
+    # 2. Fallback procedural geometric drawing
+    r, g, b, _ = parse_hex_color(str(accent_hex), default=(59, 130, 246, 255))
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
@@ -232,7 +251,7 @@ def render_shape_layer(el: Dict, palette: Dict) -> Image.Image:
         top = (h - bar_h) // 2
         draw.rectangle([0, top, w - 1, top + bar_h], fill=fill_color)
     else:
-        radius = max(2, min(16, min(w, h) // 4))
+        radius = max(4, min(16, min(w, h) // 4))
         draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=radius, fill=fill_color)
         
     return img
@@ -242,7 +261,7 @@ def render_badge_layer(el: Dict, palette: Dict, font_pair: Dict, run_id: str = "
     """Render a badge element (background shape + text or icon). If content fails, drop the badge."""
     w = int(max(20, float(el.get("w", 100) or 100)))
     h = int(max(20, float(el.get("h", 100) or 100)))
-    badge_text = el.get("badge_text")
+    badge_text = str(el.get("badge_text") or el.get("content") or "").strip()
     badge_icon = el.get("badge_icon")
     
     if not badge_text and not badge_icon:
@@ -253,13 +272,14 @@ def render_badge_layer(el: Dict, palette: Dict, font_pair: Dict, run_id: str = "
     img = render_shape_layer(el, palette)
     draw = ImageDraw.Draw(img)
     text_color = palette.get("text_on_dark", "#FFFFFF")
+    text_rgb = parse_hex_color(text_color)[:3]
     
     if badge_text:
-        font_size = max(12, int(h * 0.35))
+        font_size = max(12, int(h * 0.28))
         font = get_font_path(font_pair.get("heading_font", "arial"), font_size)
         bbox = draw.textbbox((0, 0), badge_text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        draw.text(((w - tw) // 2, (h - th) // 2), badge_text, font=font, fill=text_color)
+        draw.text(((w - tw) // 2, (h - th) // 2), badge_text, font=font, fill=text_rgb)
     elif badge_icon:
         from app.services.icon_renderer import rasterize_icon
         icon_size = max(16, int(min(w, h) * 0.55))
@@ -271,6 +291,7 @@ def render_badge_layer(el: Dict, palette: Dict, font_pair: Dict, run_id: str = "
         
     el["render_status"] = "rendered"
     return img
+
 
 
 def render_icon_or_emoji_layer(el: Dict, palette: Dict, run_id: str = "") -> Image.Image:
@@ -335,6 +356,49 @@ def render_image_layer(el: Dict, w: int, h: int) -> Image.Image | None:
         return None
 
 
+def render_pill_button(text: str, w: int, h: int, font_name: str, palette: Dict, font_size: int = 26) -> Image.Image:
+    """Renders a high-converting rounded pill button with accent fill, contrasting text, and arrow."""
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    accent_hex = palette.get("accent_color") or palette.get("accent") or "#0D9488"
+    if isinstance(accent_hex, list):
+        accent_hex = accent_hex[0]
+    r, g, b, _ = parse_hex_color(str(accent_hex), default=(13, 148, 136, 255))
+    
+    # Calculate button width from text
+    font = get_font_path(font_name, font_size)
+    button_text = f"{text.upper().strip()} →"
+    bbox = draw.textbbox((0, 0), button_text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    
+    pad_x = 32
+    pad_y = 14
+    btn_w = min(w, tw + pad_x * 2)
+    btn_h = min(h, max(44, th + pad_y * 2))
+    
+    btn_x = max(0, (w - btn_w) // 2)
+    btn_y = max(0, (h - btn_h) // 2)
+    radius = btn_h // 2
+    
+    # Drop shadow
+    shadow_color = (0, 0, 0, 75)
+    draw.rounded_rectangle([btn_x, btn_y + 4, btn_x + btn_w - 1, btn_y + btn_h + 3], radius=radius, fill=shadow_color)
+    
+    # Button fill
+    draw.rounded_rectangle([btn_x, btn_y, btn_x + btn_w - 1, btn_y + btn_h - 1], radius=radius, fill=(r, g, b, 255))
+    
+    # Text
+    text_color = palette.get("text_on_dark", "#FFFFFF")
+    tr, tg, tb, _ = parse_hex_color(str(text_color), default=(255, 255, 255, 255))
+    tx = btn_x + (btn_w - tw) // 2
+    ty = btn_y + (btn_h - th) // 2 - 2
+    draw.text((tx, ty), button_text, font=font, fill=(tr, tg, tb, 255))
+    
+    return img
+
+
 def render_poster_to_base64(
     elements: List[Dict],
     template_id: str,
@@ -356,7 +420,6 @@ def render_poster_to_base64(
 
     elements.sort(key=lambda e: int(e.get("z_index", 0)))
 
-    
     for el in elements:
         el_type = str(el.get("type", "")).lower()
         x, y = int(el.get("x", 0)), int(el.get("y", 0))
@@ -364,21 +427,41 @@ def render_poster_to_base64(
 
         layer = None
         if el_type == "text":
-            layer = render_text(
-                text=str(el.get("content", "")),
-                x=0, y=0, 
-                w=w, h=h,
-                font_name=font_pair.get("heading_font", "arial"),
-                font_size=int(el.get("font_size", 40)),
-                color=str(el.get("color", "#FFFFFF")),
-                align=str(el.get("text_align", "left"))
+            role = str(el.get("role", "")).lower()
+            slot = str(el.get("slot", "")).lower()
+            custom_font = el.get("font_family")
+            fallback_font = (
+                font_pair.get("heading_font", "arial")
+                if role in ("headline", "cta", "button") or slot in ("headline", "cta_text")
+                else font_pair.get("body_font", font_pair.get("heading_font", "arial"))
             )
+            font_name = custom_font or fallback_font
+
+            if role in ("cta", "button") or slot == "cta_text":
+                layer = render_pill_button(
+                    text=str(el.get("content", "SHOP NOW")),
+                    w=w, h=h,
+                    font_name=font_name,
+                    palette=palette,
+                    font_size=max(18, int(el.get("font_size", 26)))
+                )
+            else:
+                layer = render_text(
+                    text=str(el.get("content", "")),
+                    x=0, y=0, 
+                    w=w, h=h,
+                    font_name=font_name,
+                    font_size=int(el.get("font_size", 40)),
+                    color=str(el.get("color", "#FFFFFF")),
+                    align=str(el.get("text_align", "left"))
+                )
         elif el_type == "shape":
             layer = render_shape_layer(el, palette)
         elif el_type in ("icon", "emoji"):
             layer = render_icon_or_emoji_layer(el, palette, run_id=run_id)
         elif el_type == "badge":
             layer = render_badge_layer(el, palette, font_pair, run_id=run_id)
+
         elif el_type == "photo" and el.get("role") == "background":
             from app.services.resource_resolver_unified import resolve_background_photo
             bg_layer, _ = resolve_background_photo(

@@ -71,6 +71,9 @@ export type AIPersona = {
   learned_patterns_summary?: string | null
   brand_palette_id?: string | null
   brand_font_pair_id?: string | null
+  content_mode?: "standard" | "meme" | "hybrid"
+  meme_format_preference?: "modern_card" | "classic"
+  meme_theme_id?: string | null
 }
 
 export type PromptStudioConfig = {

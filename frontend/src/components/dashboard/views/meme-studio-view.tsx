@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useState, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   Sparkles,
   Laugh,
@@ -25,7 +25,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { PageConnection } from "@/types/models"
+import { PageConnection, AIPersona } from "@/types/models"
 import { PageTitle } from "@/components/dashboard/shared/dashboard-ui"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { Select } from "@/components/ui/select"
 import { axiosInstance } from "@/lib/axios"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -43,15 +44,21 @@ export function MemeStudioView({
   pages?: PageConnection[]
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [selectedPageId, setSelectedPageId] = useState<number | null>(
     pages.find((p) => p.connection_status === "connected")?.id ?? pages[0]?.id ?? null
   )
   const selectedPage = pages.find((p) => p.id === selectedPageId) || pages[0]
 
+  // Personas state
+  const [personas, setPersonas] = useState<AIPersona[]>([])
+  const [selectedPersonaId, setSelectedPersonaId] = useState<number | null>(null)
+  const activePersona = personas.find((p) => p.id === selectedPersonaId) || personas.find((p) => p.content_mode === "meme") || personas[0]
+
   // Themes state
   const [builtinThemes, setBuiltinThemes] = useState<any[]>([])
   const [customThemes, setCustomThemes] = useState<any[]>([])
-  const [selectedThemeId, setSelectedThemeId] = useState<string>("cat-humor")
+  const [selectedThemeId, setSelectedThemeId] = useState<string>("tech-startups")
   const [isCustomTheme, setIsCustomTheme] = useState(false)
   const [loadingThemes, setLoadingThemes] = useState(true)
 
@@ -97,6 +104,34 @@ export function MemeStudioView({
     loadThemes()
   }, [loadThemes])
 
+  // Load Personas for active page
+  useEffect(() => {
+    if (!selectedPage?.id) {
+      setPersonas([])
+      return
+    }
+    api.get<AIPersona[]>(`/api/ai/personas/${selectedPage.id}`)
+      .then((res) => {
+        const list = res.data || []
+        setPersonas(list)
+        const personaParam = searchParams?.get("persona_id")
+        if (personaParam) {
+          const matched = list.find((p) => String(p.id) === personaParam)
+          if (matched) {
+            setSelectedPersonaId(matched.id ?? null)
+            if (matched.meme_format_preference) setFormatStyle(matched.meme_format_preference as any)
+            if (matched.meme_theme_id) setSelectedThemeId(matched.meme_theme_id)
+          }
+        } else if (list.length > 0 && selectedPersonaId === null) {
+          const memeP = list.find((p) => p.content_mode === "meme") || list.find((p) => p.is_active) || list[0]
+          setSelectedPersonaId(memeP.id ?? null)
+          if (memeP.meme_format_preference) setFormatStyle(memeP.meme_format_preference as any)
+          if (memeP.meme_theme_id) setSelectedThemeId(memeP.meme_theme_id)
+        }
+      })
+      .catch(() => setPersonas([]))
+  }, [selectedPage?.id, searchParams])
+
   // --- 1-Click Generate Meme ---
   async function handleGenerateMeme() {
     setGenerating(true)
@@ -107,6 +142,7 @@ export function MemeStudioView({
         custom_prompt: customPrompt.trim() || undefined,
         format_style: formatStyle,
         page_connection_id: selectedPage?.id || undefined,
+        persona_id: selectedPersonaId || undefined,
       })
 
       const data = res.data
@@ -256,6 +292,61 @@ export function MemeStudioView({
           >
             <FolderPlus className="size-3.5 mr-1.5 text-purple-600" />
             New Custom Theme Bucket
+          </Button>
+        </div>
+      </div>
+
+      {/* AI Persona Humor DNA Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-pink-50/80 via-purple-50/60 to-indigo-50/70 p-3.5 rounded-xl border border-pink-200/80 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-pink-600 text-white shadow-xs">
+            <Laugh className="size-4.5" />
+          </div>
+          <div>
+            <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+              <span>Active AI Persona Voice:</span>
+              <span className="text-pink-700">{activePersona ? activePersona.persona_name : "Default Page Voice"}</span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Generates memes aligned with this persona's niche, humor tone tags, and audience rules.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-52 sm:w-60">
+            <Select
+              value={selectedPersonaId ? String(selectedPersonaId) : ""}
+              onChange={(e) => {
+                const val = e.target.value ? Number(e.target.value) : null
+                setSelectedPersonaId(val)
+                if (val) {
+                  const p = personas.find((item) => item.id === val)
+                  if (p) {
+                    if (p.meme_format_preference) setFormatStyle(p.meme_format_preference as any)
+                    if (p.meme_theme_id) setSelectedThemeId(p.meme_theme_id)
+                  }
+                }
+              }}
+              className="h-8 text-xs font-semibold bg-white border-pink-200"
+            >
+              <option value="">Auto (Default Page Tone)</option>
+              {personas.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.persona_name} {p.content_mode === "meme" ? "😂" : ""}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/dashboard/create?tab=personas")}
+            className="text-xs font-semibold text-pink-700 hover:bg-pink-100/70 h-8"
+          >
+            Manage Personas →
           </Button>
         </div>
       </div>

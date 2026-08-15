@@ -23,16 +23,23 @@ from sqlalchemy.orm import Session
 from app import models
 from app.providers.llm_providers import generate_text_for_user
 from app.services.poster_orchestrator import generatePoster
+from app.services.poster_component_renderer import render_archetype_poster
+from app.services.photo_background import _search_pexels_multiple
 
 logger = logging.getLogger(__name__)
 
 
 class GraphicConcept(BaseModel):
+    archetype_id: str = Field("social-card", description="One of: social-card, editorial-hero, metric-callout, checklist-framework, promo-banner, minimal-quote")
     headline: str = Field(..., description="Punchy 2-5 word visual hook for the poster")
     subheadline: Optional[str] = Field(None, description="Supporting subtitle or takeaway")
-    badge_text: Optional[str] = Field(None, description="Short badge label like PRO TIP or GUIDE")
+    badge_text: Optional[str] = Field("PRO TIP", description="Short badge label like PRO TIP or GUIDE")
+    stat_number: Optional[str] = Field(None, description="Oversized stat for metric-callout, e.g. +4.5X or 85%")
+    items: Optional[list[str]] = Field(default_factory=list, description="3-4 step items for checklist-framework")
+    cta_text: Optional[str] = Field(None, description="CTA button text for promo-banner or editorial-hero")
     suggested_mood: Optional[str] = Field(None, description="Aesthetic mood descriptor")
-    visual_asset_query: Optional[str] = Field(None, description="Search query for background photo or primary icon")
+    visual_asset_query: Optional[str] = Field(None, description="Search query for background photo")
+    image_candidates: list[str] = Field(default_factory=list, description="List of 3-4 Pexels photo candidates for live swapping")
 
 
 class UnifiedCampaignData(BaseModel):
@@ -84,7 +91,7 @@ async def generate_unified_campaign(
     aspect_ratio: str = "1:1",
 ) -> dict:
     """
-    Executes a single unified pass generating both the post copy and matched graphic poster.
+    Executes a single unified pass generating both the post copy and matched Canva-grade graphic poster.
     """
     t_start = time.perf_counter()
 
@@ -115,25 +122,28 @@ async def generate_unified_campaign(
     # Context values
     page_name = page.page_name if page else "My Brand"
     page_picture_url = page.page_picture_url if page else None
+    handle = "@" + page_name.lower().replace(" ", "")
     persona_name = persona.persona_name if persona else "Default Creator"
     niche = (persona.niche if persona and persona.niche else topic_or_niche).strip()
     tone = (persona.tone_tags if persona and persona.tone_tags else "Engaging, Authoritative, Value-Packed").strip()
     custom_instructions = persona.custom_instructions if persona and persona.custom_instructions else ""
-    brand_palette_id = persona.brand_palette_id if persona and persona.brand_palette_id else None
-    brand_font_pair_id = persona.brand_font_pair_id if persona and persona.brand_font_pair_id else None
+    brand_palette_id = persona.brand_palette_id if persona and persona.brand_palette_id else "midnight-mint"
+    brand_font_pair_id = persona.brand_font_pair_id if persona and persona.brand_font_pair_id else "bebas-neue-inter"
 
     # 2. Build the Unified Campaign Cognitive Prompt
-    system_prompt = f"""You are an elite Social Media Strategist and Art Director.
+    system_prompt = f"""You are an elite Social Media Strategist and Canva-Grade Visual Director.
 Your task is to craft a cohesive, high-converting Facebook post campaign for a brand.
 
 A great social post consists of TWO perfectly synchronized assets:
 1. POST COPY: An attention-grabbing hook, digestible valuable content (bullets or concise story), a clear engagement CTA (asking an engaging question or invitation to comment), and 3-5 relevant hashtags.
-2. MATCHING GRAPHIC POSTER CONCEPT: The graphic is NOT a repetition of the post; it is a VISUAL HOOK.
-   - headline: A punchy 2-5 word visual hook designed for instant readability (e.g. "5 TIME TRAPS", "GROWTH BLUEPRINT", "AVOID THIS MISTAKE").
-   - subheadline: Crisp 3-7 word supporting point (e.g. "How to save 10 hours a week").
-   - badge_text: Short categorical pill (e.g. "PRO TIP", "NEW GUIDE", "CHEAT SHEET", "INSIGHT").
-   - suggested_mood: Visual aesthetic mood (e.g. "modern-minimal", "tech-bold", "warm-editorial").
-   - visual_asset_query: 2-4 keywords for searching high-impact background photography or icons (e.g. "entrepreneur workspace laptop", "urban architecture skyline").
+2. MATCHING CANVA-GRADE GRAPHIC POSTER CONCEPT:
+   Select the best design ARCHETYPE for this topic:
+   - `social-card`: For punchy observations, memes, viral insights, or advice.
+   - `editorial-hero`: For thought leadership, deep dives, big announcements, or industry trends.
+   - `metric-callout`: For statistics, case studies, growth milestones, or data insights.
+   - `checklist-framework`: For step-by-step how-tos, cheatsheets, or frameworks (include 3-4 concise items).
+   - `promo-banner`: For special offers, sales, product launches, or webinars.
+   - `minimal-quote`: For inspirational quotes, mindset shifts, or founder philosophy.
 
 BRAND PROFILE:
 - Brand/Page Name: {page_name}
@@ -148,11 +158,15 @@ You MUST output ONLY a valid JSON object matching this exact structure:
   "post_content": "The full Facebook post copy with hook, value points, CTA and emojis",
   "hashtags": ["#Tag1", "#Tag2", "#Tag3"],
   "graphic_concept": {{
+    "archetype_id": "social-card",
     "headline": "2-5 WORD PUNCHY HEADLINE",
     "subheadline": "Supporting subtitle or statistic",
-    "badge_text": "BADGE LABEL",
+    "badge_text": "PRO TIP",
+    "stat_number": "+4.5X",
+    "items": ["1. First Action Step", "2. Second Action Step", "3. Third Action Step"],
+    "cta_text": "READ GUIDE →",
     "suggested_mood": "modern-minimal",
-    "visual_asset_query": "relevant photo search query"
+    "visual_asset_query": "relevant photo search query keywords"
   }}
 }}
 """
@@ -166,7 +180,7 @@ You MUST output ONLY a valid JSON object matching this exact structure:
         prompt=user_prompt,
         system_prompt=system_prompt,
         temperature=0.7,
-        max_tokens=1200,
+        max_tokens=1400,
         db=db,
     )
 
@@ -181,47 +195,106 @@ You MUST output ONLY a valid JSON object matching this exact structure:
         hashtags = [t.strip() for t in hashtags.split() if t.startswith("#")]
 
     concept_dict = campaign_json.get("graphic_concept", {})
+    archetype_id = concept_dict.get("archetype_id", "social-card")
+    headline = concept_dict.get("headline", campaign_theme.upper()[:35])
+    subheadline = concept_dict.get("subheadline")
+    badge_text = concept_dict.get("badge_text", "PRO TIP")
+    stat_number = concept_dict.get("stat_number", "+4.5X")
+    items = concept_dict.get("items", [])
+    cta_text = concept_dict.get("cta_text", "LEARN MORE →")
+    visual_query = concept_dict.get("visual_asset_query", niche)
+
+    # 3. Resolve background photo candidates from Pexels
+    photo_candidates = []
+    if allow_pexels_bg and visual_query:
+        try:
+            photo_candidates = _search_pexels_multiple(visual_query)
+        except Exception as e:
+            logger.warning(f"Pexels search failed for query '{visual_query}': {e}")
+
+    primary_image_url = photo_candidates[0] if photo_candidates else (
+        "https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=800"
+    )
+
     graphic_concept = GraphicConcept(
-        headline=concept_dict.get("headline", campaign_theme.upper()[:30]),
-        subheadline=concept_dict.get("subheadline"),
-        badge_text=concept_dict.get("badge_text", "PRO TIP"),
+        archetype_id=archetype_id,
+        headline=headline,
+        subheadline=subheadline,
+        badge_text=badge_text,
+        stat_number=stat_number,
+        items=items,
+        cta_text=cta_text,
         suggested_mood=concept_dict.get("suggested_mood"),
-        visual_asset_query=concept_dict.get("visual_asset_query", niche),
+        visual_asset_query=visual_query,
+        image_candidates=photo_candidates[:4],
     )
 
-    # 3. Synchronously render matching Graphic Posters using the semantic hints
-    logger.info("Triggering poster orchestrator with semantic hints for headline=%r...", graphic_concept.headline)
-    poster_result = await generatePoster(
-        topic=campaign_theme,
-        persona_id=persona.id if persona else None,
-        db=db,
-        user_id=user_id,
-        candidate_count=candidate_count,
-        allow_pexels_bg=allow_pexels_bg,
-        allow_cat_bg=allow_cat_bg,
-        headline_hint=graphic_concept.headline,
-        subheadline_hint=graphic_concept.subheadline,
-        badge_hint=graphic_concept.badge_text,
-        visual_asset_query=graphic_concept.visual_asset_query,
-        mood_hint=graphic_concept.suggested_mood,
-        brand_palette_id=brand_palette_id,
-        brand_font_pair_id=brand_font_pair_id,
+    # 4. Instant Render Primary Winner Poster
+    b64_primary, _ = render_archetype_poster(
+        archetype_id=archetype_id,
+        headline=headline,
+        subheadline=subheadline,
+        image_url=primary_image_url,
+        brand_name=page_name,
+        handle=handle,
+        avatar_url=page_picture_url,
+        badge_text=badge_text,
+        stat_number=stat_number,
+        items=items,
+        cta_text=cta_text,
+        palette_id=brand_palette_id,
+        font_pair_id=brand_font_pair_id,
     )
-
-    total_ms = int((time.perf_counter() - t_start) * 1000)
 
     winner = {
-        "run_id": poster_result.get("run_id"),
-        "base64_image": poster_result.get("base64_image"),
-        "composite_score": poster_result.get("composite_score", 0.0),
-        "aesthetic_score": poster_result.get("aesthetic_score", 0.0),
-        "critic_status": poster_result.get("critic_status"),
-        "art_director": poster_result.get("art_director", {}),
-        "resolved_assets": poster_result.get("resolved_assets", []),
-        "final_opacity": poster_result.get("final_opacity", 0.0),
+        "archetype_id": archetype_id,
+        "base64_image": b64_primary,
+        "image_url": primary_image_url,
+        "headline": headline,
+        "subheadline": subheadline,
+        "badge_text": badge_text,
+        "stat_number": stat_number,
+        "items": items,
+        "cta_text": cta_text,
     }
 
-    variants = poster_result.get("candidates", [winner])
+    # 5. Generate 2 Instant Alternate Variants
+    alternate_archetypes = [a for a in ["social-card", "editorial-hero", "checklist-framework", "metric-callout"] if a != archetype_id][:2]
+    variants = [winner]
+
+    for alt_arch in alternate_archetypes:
+        alt_img_url = photo_candidates[1] if len(photo_candidates) > 1 else primary_image_url
+        try:
+            b64_alt, _ = render_archetype_poster(
+                archetype_id=alt_arch,
+                headline=headline,
+                subheadline=subheadline,
+                image_url=alt_img_url,
+                brand_name=page_name,
+                handle=handle,
+                avatar_url=page_picture_url,
+                badge_text=badge_text,
+                stat_number=stat_number,
+                items=items,
+                cta_text=cta_text,
+                palette_id=brand_palette_id,
+                font_pair_id=brand_font_pair_id,
+            )
+            variants.append({
+                "archetype_id": alt_arch,
+                "base64_image": b64_alt,
+                "image_url": alt_img_url,
+                "headline": headline,
+                "subheadline": subheadline,
+                "badge_text": badge_text,
+                "stat_number": stat_number,
+                "items": items,
+                "cta_text": cta_text,
+            })
+        except Exception as e:
+            logger.warning(f"Failed rendering alternate archetype {alt_arch}: {e}")
+
+    total_ms = int((time.perf_counter() - t_start) * 1000)
 
     return {
         "campaign_theme": campaign_theme,
@@ -236,6 +309,7 @@ You MUST output ONLY a valid JSON object matching this exact structure:
         "brand_palette_id": brand_palette_id,
         "brand_font_pair_id": brand_font_pair_id,
         "aspect_ratio": aspect_ratio,
+        "image_candidates": photo_candidates[:4],
         "total_ms": total_ms,
     }
 

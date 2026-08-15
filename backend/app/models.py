@@ -358,6 +358,9 @@ class AIPersona(Base):
     template_image_generation_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     template_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     candidate_count: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    content_mode: Mapped[str] = mapped_column(String, default="standard", nullable=False)
+    meme_format_preference: Mapped[str | None] = mapped_column(String, default="modern_card", nullable=True)
+    meme_theme_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

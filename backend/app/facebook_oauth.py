@@ -548,9 +548,33 @@ def list_user_page_connections(db: Session, user_id: int) -> list[schemas.PageCo
         .order_by(models.FacebookConnection.connected_at.desc())
         .all()
     )
+    if not connections:
+        return []
+
+    connection_ids = [c.id for c in connections]
+    # Single query to group post counts by connection and status
+    counts_rows = (
+        db.query(
+            models.PostLog.facebook_connection_id,
+            models.PostLog.status,
+            func.count(models.PostLog.id),
+        )
+        .filter(models.PostLog.facebook_connection_id.in_(connection_ids))
+        .group_by(models.PostLog.facebook_connection_id, models.PostLog.status)
+        .all()
+    )
+
+    counts_by_conn: dict[int, dict[str, int]] = {cid: {} for cid in connection_ids}
+    for conn_id, status_val, count in counts_rows:
+        if conn_id is not None and conn_id in counts_by_conn:
+            counts_by_conn[conn_id][status_val] = count
+
     results: list[schemas.PageConnectionRead] = []
     for connection in connections:
-        post_count, scheduled_post_count, paused_post_count = _post_counts_for_connection(db, connection.id)
+        counts = counts_by_conn.get(connection.id, {})
+        post_count = sum(counts.values())
+        scheduled_post_count = counts.get("scheduled", 0)
+        paused_post_count = counts.get("paused", 0)
         picture = connection.page_picture_url
         results.append(
             schemas.PageConnectionRead(

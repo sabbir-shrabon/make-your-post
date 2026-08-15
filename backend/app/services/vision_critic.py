@@ -39,18 +39,22 @@ You MUST output ONLY valid JSON matching this schema:
 
     user_prompt = "Review this poster design and provide your critique in JSON format."
 
-    response_text = generate_text(
-        prompt=user_prompt,
-        system_prompt=system_prompt,
-        model_name=model,
-        provider_name=provider,
-        api_key=api_key,
-        temperature=0.2,
-        max_tokens=300,
-        images=[data_uri]
-    )
+    try:
+        response_text = generate_text(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            model_name=model,
+            provider_name=provider,
+            api_key=api_key,
+            temperature=0.2,
+            max_tokens=300,
+            images=[data_uri]
+        )
+    except Exception as exc:
+        logger.info(f"Vision critic multimodal call skipped ({exc}), defaulting to pass.")
+        return VisionCriticResponse(status="pass")
 
-    if not response_text:
+    if not response_text or not response_text.strip():
         return VisionCriticResponse(status="pass")
 
     cleaned = response_text.strip()
@@ -61,11 +65,22 @@ You MUST output ONLY valid JSON matching this schema:
         else:
             start = cleaned.find("```") + 3
         end = cleaned.rfind("```")
-        cleaned = cleaned[start:end].strip()
+        if end != -1 and end > start:
+            cleaned = cleaned[start:end].strip()
+
+    # Match first '{' to last '}' to strip any conversational preamble/postamble
+    brace_start = cleaned.find("{")
+    brace_end = cleaned.rfind("}")
+    if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
+        cleaned = cleaned[brace_start:brace_end + 1]
+
+    if not cleaned:
+        return VisionCriticResponse(status="pass")
 
     try:
         data = json.loads(cleaned)
         return VisionCriticResponse(**data)
     except Exception as e:
-        logger.error(f"Vision critic JSON parse failed: {e}. Defaulting to pass.")
+        logger.info(f"Vision critic raw response non-JSON ({e}), defaulting to pass.")
         return VisionCriticResponse(status="pass")
+

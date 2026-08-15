@@ -1,0 +1,104 @@
+[
+  {
+    "id": "social-card",
+    "name": "Modern Social Card",
+    "description": "Twitter/LinkedIn insight card with avatar, handle, punchy headline, and anchored framed photo. 100% readable.",
+    "category": "viral_insight",
+    "best_for": ["insights", "hot-takes", "advice", "observations", "memes"],
+    "structure": {
+      "has_header": true,
+      "has_avatar": true,
+      "has_stat": false,
+      "has_items": false,
+      "has_badge": true,
+      "has_cta": false,
+      "image_placement": "framed_bottom",
+      "contrast_technique": "isolated_card"
+    }
+  },
+  {
+    "id": "editorial-hero",
+    "name": "Bold Editorial Hero",
+    "description": "Magazine-style massive headline with category pill badge, subheadline hook, and subtle directional gradient scrim.",
+    "category": "thought_leadership",
+    "best_for": ["announcements", "guides", "industry_trends", "opinions"],
+    "structure": {
+      "has_header": false,
+      "has_avatar": true,
+      "has_stat": false,
+      "has_items": false,
+      "has_badge": true,
+      "has_cta": true,
+      "image_placement": "full_bleed_scrim",
+      "contrast_technique": "gradient_scrim"
+    }
+  },
+  {
+    "id": "metric-callout",
+    "name": "Metric & Stat Callout",
+    "description": "Giant hero metric (+4.5x, 85%, $1M) in a high-contrast highlight block with supporting business takeaways.",
+    "category": "data_proof",
+    "best_for": ["case_studies", "benchmarks", "statistics", "growth_milestones"],
+    "structure": {
+      "has_header": true,
+      "has_avatar": false,
+      "has_stat": true,
+      "has_items": false,
+      "has_badge": true,
+      "has_cta": false,
+      "image_placement": "background_textured",
+      "contrast_technique": "stat_highlight_pill"
+    }
+  },
+  {
+    "id": "checklist-framework",
+    "name": "Checklist & Framework",
+    "description": "Clean actionable list with 3-4 numbered or icon pills, perfect for cheatsheets and how-to steps.",
+    "category": "how_to",
+    "best_for": ["frameworks", "checklists", "step_by_step", "cheatsheets"],
+    "structure": {
+      "has_header": true,
+      "has_avatar": false,
+      "has_stat": false,
+      "has_items": true,
+      "has_badge": true,
+      "has_cta": true,
+      "image_placement": "framed_right_or_background",
+      "contrast_technique": "pill_card_rows"
+    }
+  },
+  {
+    "id": "promo-banner",
+    "name": "High-Impact Promo",
+    "description": "Bold commercial announcement with category ribbon, prominent offer headline, and distinct CTA button pill.",
+    "category": "commercial",
+    "best_for": ["sales", "discounts", "product_launches", "webinars", "events"],
+    "structure": {
+      "has_header": false,
+      "has_avatar": false,
+      "has_stat": false,
+      "has_items": false,
+      "has_badge": true,
+      "has_cta": true,
+      "image_placement": "diagonal_or_card",
+      "contrast_technique": "solid_banner_blocks"
+    }
+  },
+  {
+    "id": "minimal-quote",
+    "name": "Minimalist Quote & Mindset",
+    "description": "Elegant typography featuring oversized quotation marks, reflective wisdom, and author attribution.",
+    "category": "inspiration",
+    "best_for": ["quotes", "mindset", "philosophy", "founder_wisdom"],
+    "structure": {
+      "has_header": false,
+      "has_avatar": true,
+      "has_stat": false,
+      "has_items": false,
+      "has_badge": false,
+      "has_cta": false,
+      "image_placement": "subtle_texture",
+      "contrast_technique": "clean_card_canvas"
+    }
+  }
+]

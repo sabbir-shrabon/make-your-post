@@ -45,45 +45,99 @@ def simplify_query(query: str) -> str:
     core_noun = filtered_words[-1]
     return SYNONYM_MAP.get(core_noun, core_noun)
 
+# High-frequency curated offline icon map (0ms instant resolution)
+STATIC_ICON_MAP = {
+    "bolt": "lucide:zap",
+    "zap": "lucide:zap",
+    "lightning": "lucide:zap",
+    "energy": "lucide:zap",
+    "sparkles": "lucide:sparkles",
+    "star": "lucide:star",
+    "magic": "lucide:wand-2",
+    "fire": "lucide:flame",
+    "flame": "lucide:flame",
+    "hot": "lucide:flame",
+    "rocket": "lucide:rocket",
+    "launch": "lucide:rocket",
+    "growth": "lucide:trending-up",
+    "chart": "lucide:bar-chart-3",
+    "analytics": "lucide:line-chart",
+    "target": "lucide:target",
+    "goal": "lucide:target",
+    "check": "lucide:check-circle-2",
+    "success": "lucide:check-circle",
+    "shield": "lucide:shield-check",
+    "security": "lucide:shield",
+    "heart": "lucide:heart",
+    "love": "lucide:heart",
+    "clock": "lucide:clock",
+    "time": "lucide:clock",
+    "lightbulb": "lucide:lightbulb",
+    "idea": "lucide:lightbulb",
+    "coffee": "lucide:coffee",
+    "trophy": "lucide:trophy",
+    "award": "lucide:award",
+    "user": "lucide:user",
+    "users": "lucide:users",
+    "team": "lucide:users-2",
+    "lock": "lucide:lock",
+    "code": "lucide:code-2",
+    "laptop": "lucide:laptop",
+    "phone": "lucide:smartphone",
+    "bag": "lucide:shopping-bag",
+    "cart": "lucide:shopping-cart",
+    "dollar": "lucide:dollar-sign",
+    "money": "lucide:banknote",
+    "bell": "lucide:bell",
+    "calendar": "lucide:calendar",
+    "gift": "lucide:gift",
+    "discount": "lucide:percent",
+    "sale": "lucide:tag",
+    "tag": "lucide:tag",
+    "pizza": "tabler:pizza",
+    "cat": "ph:cat",
+    "dog": "ph:dog",
+    "sun": "lucide:sun",
+    "moon": "lucide:moon",
+    "briefcase": "lucide:briefcase",
+}
+
+
 def resolve_icon(query: str, allow_fallback: bool = True) -> tuple[str | None, list[str]]:
     """
     Resolve a query to an Iconify ID constrained to CURATED_ICON_PREFIXES.
-    Calls Iconify search API. Returns (top result's icon id, list of up to 10 candidates).
-    Retries once with simplified query if zero results.
+    Checks instant offline static map first, then calls Iconify with a strict timeout.
     """
     if not query:
         return None, []
-        
+
+    q_clean = query.strip().lower()
+    
+    # 1. Check instant offline static map
+    if q_clean in STATIC_ICON_MAP:
+        icon_id = STATIC_ICON_MAP[q_clean]
+        return icon_id, [icon_id]
+
+    for key, icon_id in STATIC_ICON_MAP.items():
+        if key in q_clean or q_clean in key:
+            return icon_id, [icon_id]
+
+    # 2. Online search with strict 1.5s timeout
     prefixes_str = ",".join(CURATED_ICON_PREFIXES)
     url = f"https://api.iconify.design/search?query={urllib.parse.quote(query)}&prefixes={prefixes_str}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=1.5) as response:
             data = json.loads(response.read())
             icons = data.get("icons", [])
             if icons:
                 return icons[0], icons[:10]
     except Exception as e:
-        logger.warning(f"Error fetching icon for '{query}': {e}")
+        logger.info(f"Online icon search skipped for '{query}' ({e}), using fallback.")
 
-    # Retry with simplified query
-    simplified = simplify_query(query)
-    if not simplified or simplified == query.lower():
-        return ("lucide:sparkles", ["lucide:sparkles"]) if allow_fallback else (None, [])
-
-    url_retry = f"https://api.iconify.design/search?query={urllib.parse.quote(simplified)}&prefixes={prefixes_str}"
-    try:
-        req = urllib.request.Request(url_retry, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read())
-            icons = data.get("icons", [])
-            if icons:
-                return icons[0], icons[:10]
-    except Exception as e:
-        logger.warning(f"Error fetching icon for '{simplified}' (retry): {e}")
-
-    # Fallback to standard icon
-    return ("lucide:sparkles", ["lucide:sparkles"]) if allow_fallback else (None, [])
+    # 3. Fallback to standard clean icon
+    fallback_icon = "lucide:sparkles"
+    return (fallback_icon, [fallback_icon]) if allow_fallback else (None, [])
 
 
 

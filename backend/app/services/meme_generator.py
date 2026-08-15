@@ -95,24 +95,45 @@ async def generate_meme_post(
     custom_image_url: Optional[str] = None,
     format_style: Literal["classic", "modern_card"] = "modern_card",
     page_connection_id: Optional[int] = None,
+    persona_id: Optional[int] = None,
 ) -> dict:
     """
-    Generate a full viral meme + matching Facebook caption in 1 click.
+    Generate a full viral meme + matching Facebook caption in 1 click using active Persona humor guidelines.
     """
     t_start = time.perf_counter()
 
-    # 1. Resolve Page / Brand Context
+    # 1. Resolve Page / Persona / Brand Context
     page = None
+    persona = None
+    if persona_id:
+        persona = db.query(models.AIPersona).filter(
+            models.AIPersona.id == persona_id,
+            models.AIPersona.user_id == user_id,
+        ).first()
+
     if page_connection_id:
         page = db.query(models.FacebookConnection).filter(
             models.FacebookConnection.id == page_connection_id,
             models.FacebookConnection.user_id == user_id,
         ).first()
 
+    if not persona and page_connection_id:
+        persona = db.query(models.AIPersona).filter(
+            models.AIPersona.page_connection_id == page_connection_id,
+            models.AIPersona.is_active == True,
+        ).first()
+
     brand_profile = db.query(models.BrandProfile).filter(models.BrandProfile.user_id == user_id).first()
     brand_name = page.page_name if page else (brand_profile.brand_name if brand_profile else "Creator")
     avatar_url = page.page_picture_url if page else (brand_profile.logo_url if brand_profile else None)
     handle = "@" + brand_name.lower().replace(" ", "")
+
+    if persona:
+        if persona.meme_format_preference and format_style == "modern_card":
+            if persona.meme_format_preference in ("classic", "modern_card"):
+                format_style = persona.meme_format_preference  # type: ignore
+        if persona.meme_theme_id and not theme_id and not custom_theme_id:
+            theme_id = persona.meme_theme_id
 
     # 2. Resolve Theme & Source Image
     theme_meta = None
@@ -157,12 +178,24 @@ async def generate_meme_post(
         "Output ONLY a valid JSON object matching the requested schema."
     )
 
+    persona_context = ""
+    if persona:
+        persona_context = f"""
+PERSONA HUMOR DNA & BRAND VOICE:
+- Persona Name: {persona.persona_name}
+- Target Niche / Audience: {persona.niche}
+- Tone Tags: {persona.tone_tags}
+- Custom Humor Guidelines: {persona.custom_instructions or 'None'}
+- Special Directives: {persona.custom_prompt or 'None'}
+"""
+
     user_prompt = f"""
 MEME TOPIC & CONTEXT:
 - Theme: {theme_meta.get('name')} ({theme_meta.get('description')})
-- User Focus / Topic: {custom_prompt or 'Create a top-tier viral meme for this theme'}
+- User Focus / Topic: {custom_prompt or (persona.niche if persona else 'Create a top-tier viral meme for this theme')}
 - Brand Name: {brand_name}
 - Format Style: {format_style}
+{persona_context}
 
 INSTRUCTIONS:
 1. Create a hilarious meme concept:
@@ -170,7 +203,7 @@ INSTRUCTIONS:
    - For Classic style: `top_text` (setup in 3-6 words) and `bottom_text` (punchline in 3-6 words)
 2. Write a captivating, conversational Facebook post caption:
    - Short, punchy hook.
-   - Relatable observation or self-deprecating humor.
+   - Relatable observation or self-deprecating humor matching the persona tone.
    - Low-friction engagement question (e.g. "Tag someone who does this daily 😂" or "Drop your honest score 1-10 👇").
 3. Curate 3-4 trending hashtags.
 
@@ -231,5 +264,7 @@ OUTPUT JSON SCHEMA:
         "source_image_url": target_image,
         "base64_image": rendered_b64,
         "brand_name": brand_name,
+        "persona_id": persona.id if persona else None,
+        "persona_name": persona.persona_name if persona else None,
         "total_ms": total_ms,
     }

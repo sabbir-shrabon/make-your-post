@@ -8,7 +8,11 @@ export default function AISettingsPage() {
   const { pages, isInitialLoading } = useApp()
 
   if (isInitialLoading) {
-    return <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-slate-400" /></div>
+    return (
+      <div className="flex justify-center py-16">
+        <Loader2 className="size-6 animate-spin text-slate-400" />
+      </div>
+    )
   }
 
   return <AISettingsView pages={pages} />

@@ -72,7 +72,13 @@ import { api, getApiErrorMessage } from "@/lib/api"
 import { axiosInstance } from "@/lib/axios"
 import { cn } from "@/lib/utils"
 
-export function AISettingsView({ pages }: { pages: PageConnection[] }) {
+export function AISettingsView({
+  pages,
+  onTestPersona,
+}: {
+  pages: PageConnection[]
+  onTestPersona?: (persona: AIPersona) => void
+}) {
   const router = useRouter()
   const { user } = useAuth()
   const userTimezone = user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
@@ -442,150 +448,31 @@ export function AISettingsView({ pages }: { pages: PageConnection[] }) {
         </CardContent>
       </Card>
 
-      {/* --- Custom Fonts & Typography Manager Card --- */}
-      <Card className="border-slate-200 shadow-xs">
-        <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-xs">
-                <Type className="size-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-slate-900">Custom Typography & Font Manager</CardTitle>
-                <CardDescription className="text-xs">
-                  Install Google Fonts or upload custom downloaded font files (.ttf, .otf, .woff2) to use in poster rendering.
-                </CardDescription>
-              </div>
+      {/* --- Brand Typography Quick Link Card --- */}
+      <Card className="border-purple-200 bg-linear-to-r from-purple-50/50 via-white to-indigo-50/30 shadow-2xs">
+        <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 items-center justify-center rounded-xl bg-purple-600 text-white shadow-xs">
+              <Type className="size-4.5" />
             </div>
-            <Badge variant="outline" className="text-xs font-bold text-purple-700 border-purple-200">
-              {installedFonts.length} Fonts Installed
-            </Badge>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-5 grid gap-5">
-          {/* 1-Click Installers */}
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* Google Font Quick Installer */}
-            <div className="p-4 rounded-xl border border-slate-200 bg-gradient-to-b from-purple-50/30 to-white grid gap-3">
-              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <Globe className="size-3.5 text-purple-600" />
-                1-Click Google Font Downloader
-              </span>
-              <div className="flex gap-2">
-                <Input
-                  value={customGoogleFontName}
-                  onChange={(e) => setCustomGoogleFontName(e.target.value)}
-                  placeholder="e.g. Outfit, Plus Jakarta Sans, Syne, Cabinet Grotesk"
-                  className="text-xs h-8 bg-white"
-                />
-                <Button
-                  onClick={() => handleDownloadGoogleFont()}
-                  disabled={downloadingFont}
-                  size="sm"
-                  className="bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs h-8 px-3 shrink-0"
-                >
-                  {downloadingFont ? <Loader2 className="size-3 animate-spin" /> : "Install"}
-                </Button>
-              </div>
-
-              {/* Trending Google Font Quick Pills */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {["Outfit", "Plus Jakarta Sans", "Cabinet Grotesk", "Clash Display", "Playfair Display", "Poppins", "Montserrat", "Bebas Neue"].map((font) => (
-                  <button
-                    key={font}
-                    type="button"
-                    onClick={() => handleDownloadGoogleFont(font)}
-                    disabled={downloadingFont}
-                    className="text-[11px] px-2 py-0.5 rounded-full bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-300 text-slate-700 transition-all font-medium"
-                  >
-                    + {font}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom Font File Uploader */}
-            <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 flex flex-col justify-between items-center text-center">
-              <div>
-                <Type className="size-6 text-slate-400 mx-auto mb-1.5" />
-                <span className="text-xs font-bold text-slate-800 block">Upload Downloaded Font File</span>
-                <span className="text-[11px] text-slate-500">Supports .ttf, .otf, .woff, .woff2 files</span>
-              </div>
-              <label className="mt-3 cursor-pointer">
-                <input
-                  type="file"
-                  accept=".ttf,.otf,.woff,.woff2"
-                  onChange={handleUploadFontFile}
-                  disabled={uploadingFont}
-                  className="hidden"
-                />
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white hover:bg-slate-50 border border-slate-200 shadow-xs text-xs font-semibold text-slate-700 transition-all">
-                  {uploadingFont ? (
-                    <>
-                      <Loader2 className="size-3 animate-spin mr-1" /> Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="size-3.5 text-blue-600" /> Choose Font File
-                    </>
-                  )}
-                </span>
-              </label>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Custom Typography &amp; Font Manager</h4>
+              <p className="text-[11px] text-slate-500">
+                Install new Google Fonts, upload brand font binaries (.ttf, .otf), and inspect type specimens in Settings.
+              </p>
             </div>
           </div>
-
-          {/* Installed Fonts Gallery */}
-          <div className="grid gap-2">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Installed Fonts Directory</span>
-            {loadingFonts ? (
-              <div className="flex justify-center py-6">
-                <Loader2 className="size-5 animate-spin text-purple-600" />
-              </div>
-            ) : installedFonts.length === 0 ? (
-              <p className="text-xs text-slate-500 py-4 text-center">No custom fonts installed yet.</p>
-            ) : (
-              <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                {installedFonts.map((f) => (
-                  <div
-                    key={f.filename}
-                    className="p-3 rounded-lg border border-slate-200 bg-white hover:border-purple-300 transition-all flex flex-col justify-between shadow-2xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 truncate">{f.name}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteFont(f.filename)}
-                          className="size-6 p-0 text-slate-400 hover:text-red-600"
-                        >
-                          <Trash2 className="size-3" />
-                        </Button>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">{f.size_kb} KB · {f.filename}</span>
-                    </div>
-
-                    <div className="mt-2.5 p-2 rounded bg-slate-50 border border-slate-100 flex items-center justify-between">
-                      <span className="text-xs text-slate-700 font-semibold tracking-wide truncate">
-                        Aa Bb Cc 123
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBrandProfile({ ...brandProfile, font_pair_id: f.family.toLowerCase() })
-                          toast.success(`Set "${f.family}" as active Brand Kit font!`)
-                        }}
-                        className="text-[10px] font-bold text-purple-700 hover:underline shrink-0"
-                      >
-                        Use in Brand Kit
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="h-8 text-xs font-semibold gap-1.5 border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300 shrink-0"
+          >
+            <Link href="/dashboard/settings">
+              <Settings2 className="size-3.5" />
+              Open Typography Studio
+            </Link>
+          </Button>
         </CardContent>
       </Card>
 
@@ -634,9 +521,21 @@ export function AISettingsView({ pages }: { pages: PageConnection[] }) {
             <Card key={persona.id} className="shadow-xs hover:border-purple-300 transition-all">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <Badge variant="outline" className="text-[10px] text-purple-700 border-purple-200">
-                    {persona.priority_level} Priority
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    {persona.content_mode === "meme" && (
+                      <Badge className="text-[10px] bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-100 font-bold">
+                        😂 Viral Meme Mode
+                      </Badge>
+                    )}
+                    {persona.content_mode === "hybrid" && (
+                      <Badge className="text-[10px] bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100 font-bold">
+                        ⚡ Hybrid Mode
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="text-[10px] text-purple-700 border-purple-200">
+                      {persona.priority_level} Priority
+                    </Badge>
+                  </div>
                   <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
@@ -664,6 +563,35 @@ export function AISettingsView({ pages }: { pages: PageConnection[] }) {
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
                   <span>Schedule: {Array.isArray(persona.assigned_days) ? persona.assigned_days.join(", ") : "Everyday"}</span>
                   <span className="font-semibold text-slate-700">{persona.total_posts_published || 0} posts</span>
+                </div>
+                <div className="pt-1 flex flex-col gap-1.5">
+                  <Button
+                    size="sm"
+                    className="w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs h-7.5 flex items-center justify-center gap-1.5 shadow-2xs"
+                    onClick={() => {
+                      if (onTestPersona) {
+                        onTestPersona(persona)
+                      } else {
+                        router.push(`/dashboard/create?persona_id=${persona.id}&topic=${encodeURIComponent(persona.niche || persona.persona_name || "Trending Topic")}`)
+                      }
+                    }}
+                  >
+                    <Sparkles className="size-3.5" />
+                    Check / Test in Create Post →
+                  </Button>
+                  {(persona.content_mode === "meme" || persona.content_mode === "hybrid") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-pink-200 text-pink-700 hover:bg-pink-50 font-semibold text-xs h-7 flex items-center justify-center gap-1.5"
+                      onClick={() => {
+                        router.push(`/dashboard/memes?persona_id=${persona.id}`)
+                      }}
+                    >
+                      <span>😂</span>
+                      Open in Viral Meme Studio →
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -770,6 +698,102 @@ function StreamlinedPersonaModal({
         </CardHeader>
 
         <CardContent className="p-6 grid gap-5">
+          {/* Content Mode / Persona Specialization */}
+          <div className="grid gap-2 p-3.5 rounded-xl border border-purple-100 bg-gradient-to-r from-purple-50/50 via-indigo-50/30 to-pink-50/40">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                <Sparkles className="size-3.5 text-purple-600" />
+                Persona Content Type
+              </Label>
+              <span className="text-[11px] text-slate-500">Choose post generation style</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {[
+                {
+                  id: "standard",
+                  title: "📝 Standard Posts",
+                  desc: "Educational, thought leadership & promo posters",
+                },
+                {
+                  id: "meme",
+                  title: "😂 Viral Memes & Scenarios",
+                  desc: "Relatable humor, punchlines & viral scenario cards",
+                },
+                {
+                  id: "hybrid",
+                  title: "⚡ Hybrid (50/50)",
+                  desc: "Mix of high-value posts and viral humor",
+                },
+              ].map((m) => {
+                const isSelected = (draft.content_mode || "standard") === m.id
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      const isMemeMode = m.id === "meme"
+                      onChange({
+                        ...draft,
+                        content_mode: m.id as any,
+                        ...(isMemeMode && (!draft.tone_tags || draft.tone_tags.length === 0 || draft.tone_tags.includes("Professional"))
+                          ? {
+                              tone_tags: ["Humorous", "Witty", "Relatable", "Casual"],
+                              niche: draft.niche || "Relatable workplace humor, tech satire, and daily situational struggles",
+                              persona_name: draft.persona_name || "Viral Meme Creator",
+                              meme_format_preference: draft.meme_format_preference || "modern_card",
+                              meme_theme_id: draft.meme_theme_id || "tech-startups",
+                            }
+                          : {}),
+                      })
+                    }}
+                    className={cn(
+                      "p-2.5 rounded-lg border text-left transition-all",
+                      isSelected
+                        ? "bg-white border-purple-600 ring-2 ring-purple-600/20 shadow-xs"
+                        : "bg-white/70 border-slate-200 hover:bg-white hover:border-slate-300"
+                    )}
+                  >
+                    <div className="text-xs font-bold text-slate-900">{m.title}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">{m.desc}</div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Meme Specific Options */}
+            {((draft.content_mode || "standard") === "meme" || draft.content_mode === "hybrid") && (
+              <div className="mt-2 pt-2.5 border-t border-purple-100 grid gap-3 sm:grid-cols-2 animate-in fade-in">
+                <div className="grid gap-1">
+                  <Label className="text-[11px] font-bold text-slate-700">Default Meme Layout</Label>
+                  <Select
+                    value={draft.meme_format_preference || "modern_card"}
+                    onChange={(e) => onChange({ ...draft, meme_format_preference: e.target.value as any })}
+                    className="h-8 text-xs bg-white"
+                  >
+                    <option value="modern_card">Modern Card (Header Punchline + Graphic)</option>
+                    <option value="classic">Classic Impact (Top/Bottom Bold Text)</option>
+                  </Select>
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-[11px] font-bold text-slate-700">Primary Meme Theme / Niche</Label>
+                  <Select
+                    value={draft.meme_theme_id || "tech-startups"}
+                    onChange={(e) => onChange({ ...draft, meme_theme_id: e.target.value })}
+                    className="h-8 text-xs bg-white"
+                  >
+                    <option value="tech-startups">🚀 Tech Startups & Dev Life</option>
+                    <option value="workplace-humor">💼 Workplace & Office Humor</option>
+                    <option value="relatable-life">☕ Relatable Everyday Life</option>
+                    <option value="fitness-diet">💪 Fitness & Gym Realities</option>
+                    <option value="marketing-sales">📈 Marketing & Sales Irony</option>
+                    <option value="real-estate">🏡 Real Estate & Agents</option>
+                    <option value="ecommerce-retail">🛍️ E-Commerce & Shopping</option>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Step 1: Page Niche & Topic Focus */}
           <div className="grid gap-2">
             <div className="flex items-center justify-between">
@@ -781,7 +805,7 @@ function StreamlinedPersonaModal({
             <Input
               value={draft.niche || ""}
               onChange={(e) => onChange({ ...draft, niche: e.target.value })}
-              placeholder="e.g. Daily productivity tips, tech founder growth hacks, and startup advice"
+              placeholder={draft.content_mode === "meme" ? "e.g. Relatable software engineer struggles, product management satire, startup humor" : "e.g. Daily productivity tips, tech founder growth hacks, and startup advice"}
               className="text-sm font-medium"
             />
           </div>

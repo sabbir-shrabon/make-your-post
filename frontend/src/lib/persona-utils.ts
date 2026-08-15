@@ -49,6 +49,7 @@ export const templateDefaults: Record<string, PersonaTemplateDefault> = {
   "News and Commentary": { niche: "timely news, commentary, and analysis", tone_tags: ["Authoritative", "Professional"], prompt_config: { goal: "Educate my audience", structure: "Fact then explanation then opinion" } },
   "Motivational Page": { niche: "motivation, mindset, discipline, and personal growth", tone_tags: ["Bold", "Empathetic"], prompt_config: { goal: "Inspire and motivate", structure: "Single powerful statement" } },
   "Tech and Startup": { niche: "technology, startups, product building, and business lessons", tone_tags: ["Witty", "Professional"], prompt_config: { goal: "Educate my audience", structure: "Hook then value then CTA" } },
+  "Viral Meme & Scenario Creator": { niche: "relatable workplace humor, tech satire, everyday struggles, and situational meme comedy", tone_tags: ["Witty", "Humorous", "Casual"], content_mode: "meme", meme_format_preference: "modern_card", meme_theme_id: "tech-startups", prompt_config: { goal: "Entertain with viral memes", every_post_includes: ["A relatable struggle", "Emojis"], structure: "No fixed structure, let AI decide" } },
 }
 
 export function emptyPersona(): AIPersona {
@@ -78,6 +79,9 @@ export function emptyPersona(): AIPersona {
     template_reference_image_url: null,
     brand_palette_id: null,
     brand_font_pair_id: null,
+    content_mode: "standard",
+    meme_format_preference: "modern_card",
+    meme_theme_id: "tech-startups",
   }
 }
 

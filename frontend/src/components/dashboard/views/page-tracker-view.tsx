@@ -20,7 +20,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/lib/api"
 
 
-export function PageTrackerView({ pages }: { pages: PageConnection[] }) {
+export function PageTrackerView({
+  pages,
+  onRemixPost,
+}: {
+  pages: PageConnection[]
+  onRemixPost?: (content: string, topic?: string) => void
+}) {
   const [data, setData] = React.useState<TrackerDashboard | null>(null)
   const [url, setUrl] = React.useState("")
   const [name, setName] = React.useState("")
@@ -151,11 +157,21 @@ export function PageTrackerView({ pages }: { pages: PageConnection[] }) {
                 <Button variant="outline" size="sm" onClick={() => useInspiration(post.content)}>
                   Use as Style Inspiration
                 </Button>
-                <Button asChild size="sm" className="bg-blue-700 hover:bg-blue-800 text-white">
-                  <Link href={`/dashboard/create?topic=${encodeURIComponent(post.topic || post.page_name || "Trending Topic")}&inspiration=${encodeURIComponent(post.content)}`}>
-                    Draft Post from this Example
-                  </Link>
-                </Button>
+                {onRemixPost ? (
+                  <Button
+                    size="sm"
+                    className="bg-blue-700 hover:bg-blue-800 text-white font-semibold"
+                    onClick={() => onRemixPost(post.content, post.topic || post.page_name)}
+                  >
+                    Remix into Composer
+                  </Button>
+                ) : (
+                  <Button asChild size="sm" className="bg-blue-700 hover:bg-blue-800 text-white">
+                    <Link href={`/dashboard/create?topic=${encodeURIComponent(post.topic || post.page_name || "Trending Topic")}&inspiration=${encodeURIComponent(post.content)}`}>
+                      Draft Post from this Example
+                    </Link>
+                  </Button>
+                )}
               </div>
             </div>
           ))}

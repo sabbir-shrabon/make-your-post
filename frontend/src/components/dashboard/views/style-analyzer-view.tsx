@@ -18,7 +18,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { api } from "@/lib/api"
 
 
-export function StyleAnalyzerView({ pages }: { pages: PageConnection[] }) {
+export function StyleAnalyzerView({
+  pages,
+  onUseInComposer,
+  onOpenPromptStudio,
+}: {
+  pages: PageConnection[]
+  onUseInComposer?: (promptText: string) => void
+  onOpenPromptStudio?: () => void
+}) {
   const router = useRouter()
   const [step, setStep] = StepState()
   const [primaryPost, setPrimaryPost] = React.useState("")
@@ -110,11 +118,27 @@ export function StyleAnalyzerView({ pages }: { pages: PageConnection[] }) {
     }
   }
 
+  function handleUseInComposer() {
+    if (!analysisResult) return
+    const tones = Array.isArray(analysisResult.tone_tags) ? analysisResult.tone_tags.join(", ") : ""
+    const niche = analysisResult.niche || ""
+    const promptSummary = `Write an engaging post about ${niche}. Tone: ${tones}. Style: ${analysisResult.custom_instructions || "Direct, clear, value-packed"}`
+    if (onUseInComposer) {
+      onUseInComposer(promptSummary)
+    } else {
+      router.push(`/dashboard/create?topic=${encodeURIComponent(niche)}`)
+    }
+  }
+
   function openInPromptStudio() {
     if (analysisResult) {
       localStorage.setItem("ai_persona_prefill", JSON.stringify(analysisResult))
     }
-    router.push("/dashboard/ai-settings")
+    if (onOpenPromptStudio) {
+      onOpenPromptStudio()
+    } else {
+      router.push("/dashboard/create?tab=personas")
+    }
   }
 
   if (step === "analyzing") {
@@ -145,13 +169,13 @@ export function StyleAnalyzerView({ pages }: { pages: PageConnection[] }) {
       <>
         <PageTitle 
           title="Persona DNA Extracted" 
-          subtitle="Your writing style has been analyzed. You can fine-tune it in Prompt Studio or save it directly." 
+          subtitle="Your writing style has been analyzed. You can generate a post immediately or save it as a persona." 
           aiPowered 
         />
 
         <div className="grid gap-6">
           {/* Main Summary Header */}
-          <Card className="border-purple-200 bg-purple-50/50">
+          <Card className="border-purple-200 bg-purple-50/50 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -162,17 +186,21 @@ export function StyleAnalyzerView({ pages }: { pages: PageConnection[] }) {
                   </CardTitle>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => setStep("input")}>
-                    <RotateCcw className="size-4 mr-2" />
+                  <Button variant="outline" size="sm" onClick={() => setStep("input")}>
+                    <RotateCcw className="size-3.5 mr-1.5" />
                     Analyze Another
                   </Button>
-                  <Button variant="outline" className="border-purple-300 text-purple-700 hover:bg-purple-100" onClick={openInPromptStudio}>
-                    <ArrowRight className="size-4 mr-2" />
-                    Open in Prompt Studio
+                  <Button variant="outline" size="sm" className="border-purple-300 text-purple-700 hover:bg-purple-100" onClick={openInPromptStudio}>
+                    <ArrowRight className="size-3.5 mr-1.5" />
+                    Edit in Personas
                   </Button>
-                  <Button className="bg-purple-700 hover:bg-purple-800" onClick={quickSavePersona} disabled={savingQuick}>
-                    <Save className="size-4 mr-2" />
-                    {savingQuick ? "Saving..." : "Quick-Save to Page"}
+                  <Button size="sm" className="bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-xs" onClick={handleUseInComposer}>
+                    <Sparkles className="size-3.5 mr-1.5" />
+                    Create Post with this Style
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={quickSavePersona} disabled={savingQuick}>
+                    <Save className="size-3.5 mr-1.5" />
+                    {savingQuick ? "Saving..." : "Save to Page"}
                   </Button>
                 </div>
               </div>

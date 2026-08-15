@@ -47,6 +47,24 @@ RATIO_DIMENSIONS: dict[str, tuple[int, int]] = {
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
+from app.services.poster_component_renderer import render_archetype_poster
+
+class ReRenderArchetypeRequest(BaseModel):
+    archetype_id: str = "social-card"
+    headline: str = ""
+    subheadline: Optional[str] = None
+    badge_text: Optional[str] = None
+    stat_number: Optional[str] = None
+    items: Optional[list[str]] = None
+    cta_text: Optional[str] = None
+    image_url: Optional[str] = None
+    brand_name: Optional[str] = "Creator"
+    handle: Optional[str] = "@creator"
+    avatar_url: Optional[str] = None
+    palette_id: Optional[str] = None
+    font_pair_id: Optional[str] = None
+    aspect_ratio: Literal["1:1", "16:9", "4:5", "9:16"] = "1:1"
+
 class AssembleTraceRequest(BaseModel):
     topic: str
     persona_id: Optional[int] = None
@@ -54,6 +72,7 @@ class AssembleTraceRequest(BaseModel):
     use_news_grounding: bool = False
     allow_pexels_bg: bool = False
     allow_cat_bg: bool = False
+    template_id: Optional[str] = None
 
 class MutateTraceRequest(BaseModel):
     mutation_prompt: str
@@ -111,6 +130,7 @@ async def assemble_trace(
             use_news_grounding=body.use_news_grounding,
             allow_pexels_bg=body.allow_pexels_bg,
             allow_cat_bg=body.allow_cat_bg,
+            template_id=body.template_id,
         )
     except Exception as exc:
         logger.error("assemble-trace failed for topic=%r: %s", body.topic, exc, exc_info=True)
@@ -212,4 +232,60 @@ async def regenerate_layer(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Layer regeneration failed: {exc}",
         )
+
+
+@router.get("/archetypes")
+def list_archetypes():
+    """
+    Returns the list of 6 Canva-grade social poster archetypes.
+    """
+    archetypes_path = os.path.join(os.path.dirname(__file__), "..", "data", "design-system", "archetypes.json")
+    try:
+        with open(archetypes_path, "r", encoding="utf-8") as f:
+            import json
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load archetypes.json: {e}")
+        return []
+
+
+@router.post("/render-preview")
+def render_poster_preview(body: ReRenderArchetypeRequest):
+    """
+    Fast sub-100ms live preview re-rendering of any Archetype without LLM invocation.
+    """
+    canvas_w, canvas_h = RATIO_DIMENSIONS.get(body.aspect_ratio, (1080, 1080))
+    t_start = time.perf_counter()
+    try:
+        b64_str, _ = render_archetype_poster(
+            archetype_id=body.archetype_id,
+            headline=body.headline,
+            subheadline=body.subheadline,
+            image_url=body.image_url,
+            brand_name=body.brand_name or "Creator",
+            handle=body.handle or "@creator",
+            avatar_url=body.avatar_url,
+            badge_text=body.badge_text,
+            stat_number=body.stat_number,
+            items=body.items,
+            cta_text=body.cta_text,
+            canvas_w=canvas_w,
+            canvas_h=canvas_h,
+            palette_id=body.palette_id,
+            font_pair_id=body.font_pair_id,
+        )
+        render_ms = int((time.perf_counter() - t_start) * 1000)
+        return {
+            "status": "success",
+            "base64_image": b64_str,
+            "render_ms": render_ms,
+            "archetype_id": body.archetype_id,
+        }
+    except Exception as exc:
+        logger.error("render_poster_preview failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Preview render failed: {exc}"
+        )
+
 

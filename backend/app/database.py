@@ -26,8 +26,8 @@ engine_kwargs = {
     "connect_args": connect_args,
     "pool_pre_ping": True,
     "pool_recycle": 1800,
-    "pool_size": 3,
-    "max_overflow": 5,
+    "pool_size": 10,
+    "max_overflow": 20,
 }
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_kwargs)
@@ -41,6 +41,16 @@ class Base(DeclarativeBase):
 def create_database_tables() -> None:
     try:
         Base.metadata.create_all(bind=engine)
+        with engine.begin() as conn:
+            for col, col_type in [
+                ("content_mode", "VARCHAR DEFAULT 'standard'"),
+                ("meme_format_preference", "VARCHAR DEFAULT 'modern_card'"),
+                ("meme_theme_id", "VARCHAR"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE ai_personas ADD COLUMN {col} {col_type}"))
+                except Exception:
+                    pass
     except OperationalError as exc:
         message = str(exc.orig).lower() if getattr(exc, "orig", None) else str(exc).lower()
         

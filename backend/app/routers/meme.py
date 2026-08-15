@@ -30,6 +30,7 @@ class GenerateMemeRequest(BaseModel):
     custom_image_url: Optional[str] = Field(None, description="Custom base image URL")
     format_style: Literal["classic", "modern_card"] = Field("modern_card", description="Meme layout style")
     page_connection_id: Optional[int] = Field(None, description="Target Facebook Page Connection ID")
+    persona_id: Optional[int] = Field(None, description="Specific AI Persona ID to power humor DNA")
 
 
 class ReRenderMemeRequest(BaseModel):
@@ -168,6 +169,7 @@ async def generate_meme(
             custom_image_url=body.custom_image_url,
             format_style=body.format_style,
             page_connection_id=body.page_connection_id,
+            persona_id=body.persona_id,
         )
         return result
     except Exception as exc:

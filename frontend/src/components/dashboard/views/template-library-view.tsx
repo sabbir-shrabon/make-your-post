@@ -1,465 +1,396 @@
 "use client"
 
 import * as React from "react"
-
+import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import {
-  PageConnection, Post, AIPersona, PromptStudioConfig, PerformanceInsights,
-  Analytics, DashboardIntelligence, StyleAnalysis, TrackerDashboard, ScheduledSlotItem, GlobalModelSettings
-} from "@/types/models"
-import { PageTitle, PageMini, PageStatusBadge, formatDate, todayLabel, isPastScheduledSlot, slotStatusClass, MiniBars, emptySchedule, scheduleDayLabel, activeDaysToAbbrev, abbrevDaysToFull, scheduleFromLegacyPersona, LearnedInsightsPanel, ConnectEmpty, FacebookConnectButton, Stat, PostRow, Empty, SkeletonPage, badgeClass } from "@/components/dashboard/shared/dashboard-ui"
-
-
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
-import {
-  BarChart3,
-  CalendarClock,
-  Check,
-  FileText,
-  Home,
-  Loader2,
-  Menu,
-  PenLine,
-  Plus,
-  Plug,
-  Radar,
-  RefreshCw,
-  RotateCcw,
-  Search,
-  Settings,
   Sparkles,
-  Trash2,
-  X,
-  Image,
   LayoutTemplate,
+  Search,
+  Plus,
+  Upload,
+  Download,
+  Trash2,
+  Eye,
+  Code,
+  Layers,
+  Filter,
+  Grid,
+  List,
+  RefreshCw,
+  FlaskConical,
+  Check,
+  ChevronRight,
+  Info,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Separator } from "@/components/ui/separator"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { PageTitle } from "@/components/dashboard/shared/dashboard-ui"
+import { axiosInstance } from "@/lib/axios"
 import { AgenticPosterLab } from "@/components/social-platform/AgenticPosterLab"
-import { Label } from "@/components/ui/label"
-import { Select } from "@/components/ui/select"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
-import { useAuth } from "@/contexts/auth-context"
-import { useApp } from "@/contexts/app-context"
-import { API_BASE_URL, BACKEND_ORIGIN, api, getApiErrorMessage } from "@/lib/api"
-import { cn } from "@/lib/utils"
-import { TemplateBuilder } from "@/components/template-builder/template-builder"
-import { PostPhotocardEditor } from "@/components/post-photocard-editor"
+import { 
+  TemplatePosterDemoCard, 
+  type PosterTemplateItem 
+} from "@/components/dashboard/templates/template-poster-demo-card"
+import { VisualSlotBuilderModal } from "@/components/dashboard/templates/visual-slot-builder-modal"
 
+const CATEGORIES = [
+  "All",
+  "Sales & Promo",
+  "Tech & SaaS",
+  "Quotes & Mindset",
+  "Editorial & Story",
+  "Data & Stats",
+  "Lists & How-To",
+  "Comparison & Results",
+  "My Custom Templates",
+]
 
 export function TemplateLibraryView() {
-  const { imageTemplates, refreshImageTemplates } = useApp()
-  const [selectedTemplate, setSelectedTemplate] = React.useState<any | null>(null)
-  const [analyzing, setAnalyzing] = React.useState(false)
-  const [createMode, setCreateMode] = React.useState<"choose" | "extract" | "manual">("choose")
-  const [name, setName] = React.useState("")
-  const [file, setFile] = React.useState<File | null>(null)
+  const router = useRouter()
+  const [activeMainTab, setActiveMainTab] = useState<"library" | "lab">("library")
+  const [templates, setTemplates] = useState<PosterTemplateItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedCategory, setSelectedCategory] = useState("All")
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
+  
+  // Custom Visual Canvas Builder Modal
+  const [isBuilderModalOpen, setIsBuilderModalOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  const [testingTemplate, setTestingTemplate] = React.useState<any | null>(null)
-  const [inputText, setInputText] = React.useState("")
-  const [isRunningTest, setIsRunningTest] = React.useState(false)
-  const [testLoadingText, setTestLoadingText] = React.useState("")
-  const [testResult, setTestResult] = React.useState<any | null>(null)
-  const [testError, setTestError] = React.useState<string | null>(null)
-  const [showPrompt, setShowPrompt] = React.useState(false)
-
-  const templates = imageTemplates
-
-  async function runTemplateTest() {
-    if (!inputText.trim()) {
-      toast.error("Please enter a post or describe your content first.")
-      return
-    }
-    setIsRunningTest(true)
-    setTestError(null)
-    setTestResult(null)
-    setTestLoadingText("LLM is deciding styling…")
-
+  const fetchTemplates = React.useCallback(async () => {
+    setLoading(true)
     try {
-      // Step 1: LLM Styling Decisions
-      const llmResponse = await api.post(`/api/image-templates/${testingTemplate.id}/test-llm`, {
-        input_text: inputText.trim()
-      })
-      
-      const intermediateResult = llmResponse.data
-      setTestResult(intermediateResult) // Display readable decisions immediately
-      setTestLoadingText("Assembling photocard…")
-
-      // Step 2: Render Image via PIL
-      const renderResponse = await api.post(`/api/image-templates/${testingTemplate.id}/test-render`, {
-        llm_decisions: intermediateResult.llm_decisions
-      })
-
-      // Combine both results
-      setTestResult({
-        ...intermediateResult,
-        preview_image_url: renderResponse.data.preview_image_url
-      })
-      
+      const res = await axiosInstance.get("/api/poster/templates")
+      if (res.data?.templates) {
+        setTemplates(res.data.templates)
+      }
     } catch (err: any) {
-      const errMsg = err?.response?.data?.detail || err.message || "Test failed."
-      setTestError(errMsg)
+      console.error("Failed to load templates:", err)
+      toast.error("Failed to load templates catalog")
     } finally {
-      setIsRunningTest(false)
-      setTestLoadingText("")
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchTemplates()
+  }, [fetchTemplates])
+
+  // Filter templates
+  const filteredTemplates = templates.filter((tpl) => {
+    const matchesSearch =
+      tpl.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tpl.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tpl.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      tpl.best_for?.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase()))
+
+    if (!matchesSearch) return false
+
+    if (selectedCategory === "All") return true
+    if (selectedCategory === "My Custom Templates") return !tpl.is_system
+    return tpl.category.toLowerCase() === selectedCategory.toLowerCase()
+  })
+
+  // Action: Launch template in Poster Lab
+  function handleUseInLab(tpl: PosterTemplateItem) {
+    sessionStorage.setItem("poster_lab_selected_template", tpl.id)
+    setActiveMainTab("lab")
+    toast.success(`Selected "${tpl.name}" — Launching Poster Lab!`)
+  }
+
+  // Action: Delete custom template
+  async function handleDeleteTemplate(tpl: PosterTemplateItem) {
+    if (!confirm(`Are you sure you want to delete custom template "${tpl.name}"?`)) return
+    try {
+      await axiosInstance.delete(`/api/poster/templates/${tpl.id}`)
+      toast.success(`Template "${tpl.name}" deleted.`)
+      fetchTemplates()
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Delete failed")
     }
   }
 
-
-
-  async function handleAnalyze(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim() || !file) {
-      toast.error("Please enter a template name and choose a reference image.")
-      return
-    }
-    setAnalyzing(true)
+  // Action: Import JSON file
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const formData = new FormData()
+    formData.append("file", file)
     try {
-      const formData = new FormData()
-      formData.append("name", name.trim())
-      formData.append("image", file)
-      await api.post("/api/image-templates/analyze", formData)
-      toast.success("Image analyzed and template created successfully!")
-      setName("")
-      setFile(null)
-      refreshImageTemplates()
+      await axiosInstance.post("/api/poster/templates/import", formData, {
+        headers: { "Content-Type": "multipart/form-data" }
+      })
+      toast.success("Template imported successfully!")
+      fetchTemplates()
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Template analysis failed.")
+      toast.error(err.response?.data?.detail || "Import failed. Invalid JSON format.")
     } finally {
-      setAnalyzing(false)
-    }
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Are you sure you want to delete this template?")) return
-    try {
-      await api.delete(`/api/image-templates/${id}`)
-      toast.success("Template deleted successfully")
-      refreshImageTemplates()
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Delete failed.")
-    }
-  }
-
-  async function openTemplate(id: string) {
-    try {
-      const response = await api.get(`/api/image-templates/${id}`)
-      setSelectedTemplate(response.data)
-    } catch {
-      toast.error("Could not load template details.")
+      if (fileInputRef.current) fileInputRef.current.value = ""
     }
   }
 
   return (
-    <Tabs defaultValue="library" className="w-full">
-      <div className="flex items-center justify-between mb-6">
-        <PageTitle title="Templates" subtitle="Extract layouts from reference images or build templates with visual, form, JSON, or AI-assisted editors." />
-        <TabsList>
-          <TabsTrigger value="library">Library & Builder</TabsTrigger>
-          <TabsTrigger value="lab">Agentic Poster Lab</TabsTrigger>
-        </TabsList>
-      </div>
-
-      <TabsContent value="library" className="m-0 focus-visible:outline-none focus-visible:ring-0 space-y-6">
-      {createMode === "manual" ? (
-        <TemplateBuilder
-          onCancel={() => setCreateMode("choose")}
-          onSaved={() => {
-            setCreateMode("choose")
-            refreshImageTemplates()
-          }}
+    <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as any)} className="w-full">
+      {/* Header Bar */}
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+        <PageTitle 
+          title="Poster Templates Hub" 
+          subtitle="Explore high-converting Canva-grade layout architectures, inspect slot blueprints, and build custom reusable templates." 
         />
-      ) : null}
-      <div className={cn("grid gap-6 md:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-500 fill-mode-backwards", createMode === "manual" && "hidden")}>
-        <Card className="md:col-span-1 h-fit">
-          <CardHeader>
-            <CardTitle>New Template</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            {createMode === "choose" ? (
-              <>
-                <p className="text-sm text-slate-600">Choose how to create your template.</p>
-                <Button
-                  type="button"
-                  className="bg-purple-700 text-white hover:bg-purple-800 w-full"
-                  onClick={() => setCreateMode("extract")}
-                >
-                  <Sparkles className="size-4 mr-2" />
-                  Extract from Reference Image
-                </Button>
-                <Button type="button" variant="outline" className="w-full" onClick={() => setCreateMode("manual")}>
-                  <LayoutTemplate className="size-4 mr-2" />
-                  Visual Canvas Builder
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button type="button" variant="ghost" size="sm" className="w-fit -mt-1" onClick={() => setCreateMode("choose")}>
-                  ← Back
-                </Button>
-                <form onSubmit={handleAnalyze} className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="template-name">Template Name</Label>
-                    <Input
-                      id="template-name"
-                      placeholder="e.g. Minimalist Product Slide"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      disabled={analyzing}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="reference-file">Reference Image</Label>
-                    <Input
-                      id="reference-file"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
-                      disabled={analyzing}
-                    />
-                  </div>
-                  <Button type="submit" className="bg-purple-700 text-white hover:bg-purple-800 w-full" disabled={analyzing}>
-                    {analyzing ? <Loader2 className="size-4 animate-spin mr-2" /> : <Sparkles className="size-4 mr-2" />}
-                    {analyzing ? "Analyzing image structure..." : "Extract Design Layers"}
-                  </Button>
-                </form>
-              </>
-            )}
-          </CardContent>
-        </Card>
         
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>Saved Templates</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            {templates.length === 0 ? (
-              <div className="col-span-2 text-center py-10 text-slate-500">No layout templates saved. Upload one to get started!</div>
-            ) : (
-              templates.map((tpl) => (
-                <div key={tpl.id} className="text-left relative overflow-hidden rounded-lg border bg-white shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow cursor-pointer group" onClick={() => openTemplate(tpl.id)}>
-                  <div className="relative aspect-video w-full overflow-hidden bg-slate-100 border-b">
-                    {tpl.reference_image_url ? (
-                      <img src={tpl.reference_image_url} alt={tpl.name} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-purple-100 to-slate-200 text-slate-500 text-sm">
-                        Manual template
-                      </div>
-                    )}
-                    {tpl.creation_method === "manual" ? (
-                      <span className="absolute top-2 left-2 rounded bg-purple-700 px-2 py-0.5 text-xs text-white">Manual</span>
-                    ) : null}
-                  </div>
-                  <div className="p-4 flex items-center justify-between">
-                    <div className="mr-2 overflow-hidden">
-                      <h3 className="font-semibold text-slate-800 truncate">{tpl.name}</h3>
-                      <p className="text-xs text-slate-500">
-                        {tpl.aspect_ratio || "1:1"} · {new Date(tpl.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 px-2.5 text-xs text-purple-700 border-purple-200 hover:bg-purple-50 hover:text-purple-800"
-                        onClick={(e) => { e.stopPropagation(); setTestingTemplate(tpl) }}
-                      >
-                        Test
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={(e) => { e.stopPropagation(); handleDelete(tpl.id) }}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
-      {selectedTemplate ? (
-        <div className="fixed inset-0 z-50 bg-black/40 p-4 overflow-y-auto">
-          <Card className="mx-auto mt-10 max-w-2xl">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>{selectedTemplate.name}</span>
-                <Button variant="ghost" size="icon" onClick={() => setSelectedTemplate(null)}><X className="size-4" /></Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              {selectedTemplate.reference_image_url ? (
-                <img src={selectedTemplate.reference_image_url} alt={selectedTemplate.name} className="w-full rounded-md border" />
-              ) : (
-                <p className="text-sm text-slate-600 rounded-md border p-4 bg-slate-50">
-                  Manually built template ({selectedTemplate.aspect_ratio}, {selectedTemplate.canvas_width}×{selectedTemplate.canvas_height})
-                </p>
-              )}
-              <div className="text-sm text-slate-700">
-                {(() => {
-                  const layers = selectedTemplate?.template_json?.layers || []
-                  const counts = layers.reduce((acc: Record<string, number>, layer: any) => {
-                    const key = String(layer?.type || "unknown")
-                    acc[key] = (acc[key] || 0) + 1
-                    return acc
-                  }, {} as Record<string, number>)
-                  const entries = Object.entries(counts) as [string, number][]
-                  if (!entries.length) return <p>No layers found.</p>
-                  return entries.map(([type, count]) => <p key={type}>{count} {type.replaceAll("_", " ")} layer{count > 1 ? "s" : ""}</p>)
-                })()}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="flex items-center gap-2 shrink-0">
+          <TabsList className="bg-slate-100 p-1">
+            <TabsTrigger value="library" className="data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-xs font-semibold">
+              <LayoutTemplate className="size-3.5 mr-1.5" />
+              Templates Catalog
+            </TabsTrigger>
+            <TabsTrigger value="lab" className="data-[state=active]:bg-purple-700 data-[state=active]:text-white data-[state=active]:shadow-sm text-xs font-semibold">
+              <FlaskConical className="size-3.5 mr-1.5" />
+              Agentic Poster Lab
+            </TabsTrigger>
+          </TabsList>
         </div>
-      ) : null}
+      </div>
 
-      <Sheet open={testingTemplate !== null} onOpenChange={(open) => {
-        if (!open) {
-          setTestingTemplate(null)
-          setInputText("")
-          setTestResult(null)
-          setTestError(null)
-          setShowPrompt(false)
-        }
-      }}>
-        <SheetContent className="overflow-y-auto w-full max-w-lg">
-          <div className="mt-6 grid gap-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Sparkles className="size-5 text-purple-600" />
-              Test Template: {testingTemplate?.name}
-            </h2>
-            <p className="text-sm text-slate-500">
-              Run a standalone test generation using LLM styling and PIL assembly. Nothing is saved.
-            </p>
+      {/* --- TAB 1: TEMPLATE CATALOG & VISUAL BUILDER --- */}
+      <TabsContent value="library" className="m-0 focus-visible:outline-none space-y-6">
+        {/* Top Control Bar: Search, Category Filters, and Builder Trigger */}
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-4">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
             
-            <div className="grid gap-2">
-              <Label htmlFor="test-content" className="text-sm font-medium">
-                Paste a post or describe your content
-              </Label>
-              <Textarea
-                id="test-content"
-                rows={4}
-                className="resize-none"
-                placeholder="e.g. 5 productivity tips every entrepreneur needs to know this year…"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                disabled={isRunningTest}
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+              <Input
+                placeholder="Search templates by name, category, or tag (e.g. sale, quote, tech)..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-10 text-sm focus-visible:ring-purple-600 bg-slate-50/70"
               />
             </div>
 
-            <Button
-              className="bg-purple-700 hover:bg-purple-800 text-white w-full"
-              onClick={runTemplateTest}
-              disabled={isRunningTest || !inputText.trim()}
-            >
-              {isRunningTest ? (
-                <>
-                  <Loader2 className="size-4 animate-spin mr-2" />
-                  {testLoadingText}
-                </>
-              ) : (
-                "Run Test"
-              )}
-            </Button>
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                accept=".json" 
+                onChange={handleImportFile} 
+                className="hidden" 
+              />
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-10 text-xs font-semibold gap-1.5 text-slate-700 hover:text-purple-700 hover:border-purple-300"
+                onClick={() => fileInputRef.current?.click()}
+                title="Import Template JSON file"
+              >
+                <Upload className="size-3.5" />
+                Import JSON
+              </Button>
 
-            {/* Result Area */}
-            {(isRunningTest || testResult || testError) && (
-              <div className="mt-4 border-t pt-4 grid gap-3">
-                <h3 className="text-sm font-semibold text-slate-800">Result</h3>
-                
-                {/* Loader showing the exact phase */}
-                {isRunningTest && (
-                  <div className="rounded-md bg-slate-50 p-4 border flex items-center gap-3">
-                    <Loader2 className="size-5 animate-spin text-purple-700" />
-                    <span className="text-sm font-medium text-slate-700">
-                      {testLoadingText}
-                    </span>
-                  </div>
-                )}
+              <Button
+                size="sm"
+                className="h-10 text-xs font-bold gap-2 bg-purple-700 hover:bg-purple-800 text-white shadow-md transition-all hover:scale-[1.02]"
+                onClick={() => setIsBuilderModalOpen(true)}
+              >
+                <Plus className="size-4" />
+                Create Manual Template
+              </Button>
 
-                {/* Error State */}
-                {testError && (
-                  <div className="rounded-md bg-red-50 p-4 border border-red-200 text-sm text-red-600 font-medium">
-                    <p className="font-semibold mb-1">Testing failed</p>
-                    <p className="whitespace-pre-wrap break-words">{testError}</p>
-                  </div>
-                )}
-
-                {/* Success Results */}
-                {testResult && (
-                  <div className="grid gap-4">
-                    {/* Collapsible Prompt Section */}
-                    {testResult.prompt_sent && (
-                      <div className="rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => setShowPrompt(!showPrompt)}
-                          className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-100 transition-colors text-sm font-medium text-slate-700"
-                        >
-                          <span>View Prompt Sent to LLM</span>
-                          <span className="text-xs text-slate-500">{showPrompt ? "▼" : "▶"}</span>
-                        </button>
-                        {showPrompt && (
-                          <div className="border-t border-slate-200 px-4 py-3 bg-slate-900 max-h-96 overflow-y-auto">
-                            <pre className="text-xs text-slate-200 font-mono whitespace-pre-wrap break-words">
-                              {testResult.prompt_sent}
-                            </pre>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* LLM Decisions readable list */}
-                    {testResult.readable_decisions && testResult.readable_decisions.length > 0 && (
-                      <div className="rounded-md bg-slate-50 p-4 border border-slate-200 text-sm text-slate-700">
-                        <p className="font-semibold text-slate-800 mb-2">LLM Styling Decisions:</p>
-                        <ul className="list-disc list-inside space-y-1">
-                          {testResult.readable_decisions.map((decision: string, idx: number) => (
-                            <li key={idx} className="leading-relaxed font-mono text-xs">{decision}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {/* Final Image Rendering */}
-                    {testResult.preview_image_url && (
-                      <div className="grid gap-2">
-                        <div className="relative border rounded-lg overflow-hidden bg-slate-100">
-                          <img
-                            src={testResult.preview_image_url}
-                            alt="Photocard Preview"
-                            className="w-full h-auto object-contain"
-                          />
-                        </div>
-                        <p className="text-xs text-slate-500 text-center italic">
-                          This is a preview only. Nothing is saved.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 ml-1">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
+                    viewMode === "grid" ? "bg-white text-purple-700 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                  }`}
+                  title="Grid View (Live Previews)"
+                >
+                  <Grid className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
+                    viewMode === "list" ? "bg-white text-purple-700 shadow-sm" : "text-slate-500 hover:text-slate-900"
+                  }`}
+                  title="List View (Detailed Table)"
+                >
+                  <List className="size-4" />
+                </button>
               </div>
-            )}
+            </div>
           </div>
-        </SheetContent>
-      </Sheet>
+
+          {/* Category Filter Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 border-t border-slate-100">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-1 shrink-0 flex items-center gap-1">
+              <Filter className="size-3" /> Filter:
+            </span>
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-full transition-all shrink-0 ${
+                    isSelected
+                      ? "bg-purple-700 text-white font-bold shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900"
+                  }`}
+                >
+                  {cat}
+                  {cat === "All" && ` (${templates.length})`}
+                  {cat === "My Custom Templates" && ` (${templates.filter((t) => !t.is_system).length})`}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Results Count & Quick Status */}
+        <div className="flex items-center justify-between text-xs text-slate-500 px-1">
+          <p>
+            Showing <strong>{filteredTemplates.length}</strong> of <strong>{templates.length}</strong> layout templates
+          </p>
+          <button
+            type="button"
+            onClick={fetchTemplates}
+            className="flex items-center gap-1 text-slate-500 hover:text-purple-700 transition-colors"
+          >
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin text-purple-600" : ""}`} />
+            Refresh Catalog
+          </button>
+        </div>
+
+        {/* --- TEMPLATES DISPLAY --- */}
+        {loading && templates.length === 0 ? (
+          <div className="py-24 flex flex-col items-center justify-center text-slate-400 gap-3">
+            <RefreshCw className="size-8 animate-spin text-purple-600" />
+            <p className="font-semibold text-sm">Loading Canva-grade poster templates...</p>
+          </div>
+        ) : filteredTemplates.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-12 text-center flex flex-col items-center justify-center gap-3">
+            <LayoutTemplate className="size-10 text-slate-300" />
+            <h4 className="font-bold text-slate-700 text-base">No templates found</h4>
+            <p className="text-xs text-slate-500 max-w-sm">
+              No layout templates match your active search or filter. Try clearing filters or create a new custom template.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchQuery("")
+                setSelectedCategory("All")
+              }}
+              className="text-xs mt-2"
+            >
+              Reset Filters
+            </Button>
+          </div>
+        ) : viewMode === "grid" ? (
+          /* GRID VIEW */
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {filteredTemplates.map((tpl) => (
+              <TemplatePosterDemoCard
+                key={tpl.id}
+                template={tpl}
+                onUseInLab={handleUseInLab}
+                onDelete={handleDeleteTemplate}
+              />
+            ))}
+          </div>
+        ) : (
+          /* LIST VIEW */
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden divide-y divide-slate-100">
+            {filteredTemplates.map((tpl) => {
+              const slotKeys = Object.keys(tpl.slots || {})
+              return (
+                <div 
+                  key={tpl.id} 
+                  className="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-purple-50/30 transition-colors"
+                >
+                  <div className="flex items-start gap-3.5">
+                    <div className="size-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 text-purple-400 font-mono text-xs font-bold shadow-sm">
+                      {slotKeys.length}s
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-slate-900 text-sm">{tpl.name}</h4>
+                        {tpl.is_system ? (
+                          <Badge variant="outline" className="text-[10px] font-mono text-purple-700 bg-purple-50 border-purple-200">
+                            Built-In
+                          </Badge>
+                        ) : (
+                          <Badge className="text-[10px] font-mono bg-emerald-600 text-white">
+                            Custom
+                          </Badge>
+                        )}
+                        <span className="text-xs text-slate-500 font-medium">· {tpl.category}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5 max-w-xl line-clamp-1">
+                        {tpl.description || "Optimized poster layout blueprint"}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {slotKeys.map((s) => (
+                          <span key={s} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs text-purple-700 border-purple-200 hover:bg-purple-50"
+                      onClick={() => handleUseInLab(tpl)}
+                    >
+                      <Sparkles className="size-3.5 mr-1" />
+                      Use in Lab
+                    </Button>
+                    {!tpl.is_system && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDeleteTemplate(tpl)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </TabsContent>
-      <TabsContent value="lab" className="m-0 focus-visible:outline-none focus-visible:ring-0">
+
+      {/* --- TAB 2: AGENTIC POSTER LAB --- */}
+      <TabsContent value="lab" className="m-0 focus-visible:outline-none">
         <AgenticPosterLab />
       </TabsContent>
+
+      {/* Custom Template Canvas Builder Modal */}
+      <VisualSlotBuilderModal
+        isOpen={isBuilderModalOpen}
+        onClose={() => setIsBuilderModalOpen(false)}
+        onSaved={fetchTemplates}
+      />
     </Tabs>
   )
 }
-

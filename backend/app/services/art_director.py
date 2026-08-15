@@ -60,6 +60,7 @@ class CanvasElement(BaseModel):
     font_size: Optional[int] = None
     color: Optional[str] = None
     font_weight: Optional[str] = "regular"
+    font_family: Optional[str] = None
     text_align: Optional[str] = "left"
     
     # Shape/Badge specific
@@ -67,14 +68,26 @@ class CanvasElement(BaseModel):
     badge_text: Optional[str] = None
     badge_icon: Optional[str] = None
 
+class BackgroundChoice(BaseModel):
+    type: str = "gradient"
+    fallback_type: str = "gradient"
+    pexels_query: Optional[str] = None
+    cat_theme: Optional[str] = None
+
+
 class ArtDirectorOutput(BaseModel):
     design_rationale: Optional[str] = None
-    mood: str
-    template_id: str
-    palette_id: str
-    font_pair_id: str
-    background_color: str
+    mood: str = "modern"
+    template_id: str = "centered-hero"
+    palette_id: str = "ink-sun"
+    font_pair_id: str = "bold-punch"
+    background_color: str = "#121212"
+    background_choice: Optional[BackgroundChoice] = Field(default_factory=BackgroundChoice)
+    headline: Optional[str] = None
+    subheadline: Optional[str] = None
     elements: List[CanvasElement] = Field(default_factory=list)
+
+
 
 def run_art_director(
     topic: str,
@@ -89,18 +102,41 @@ def run_art_director(
     subheadline_hint: str | None = None,
     badge_hint: str | None = None,
     visual_asset_query: str | None = None,
+    template_id: str | None = None,
     **kwargs,
 ) -> ArtDirectorOutput:
     template_options = "\n".join([f"- {t['id']}: Slots: {', '.join(t.get('slots', {}).keys())}" for t in TEMPLATES])
     palette_options = "\n".join([f"- {p['id']} (mood: {', '.join(p.get('mood', []))})" for p in PALETTES])
     font_pair_options = "\n".join([f"- {fp['id']} (mood: {', '.join(fp.get('mood', []))})" for fp in FONT_PAIRS])
-    shape_options = "\n".join([f"- {s}" for s in SHAPE_TYPES])
+    vector_shapes = [
+        "sunburst-rays (background energy/summer rays)",
+        "radial-glow (central spotlight glow)",
+        "dot-matrix (tech/saas grid dots)",
+        "abstract-waves (creative flowing waves)",
+        "tropical-palm-fronds (botanical corner leaves)",
+        "tech-corner-brackets (modern cyber/saas brackets)",
+        "vintage-flourish (editorial/luxury corner flourish)",
+        "starburst-badge (bold retail/sale burst sticker)",
+        "ribbon-banner (folded announcement ribbon)",
+        "arched-banner (curved stage banner)",
+        "price-bubble (circular value bubble)",
+        "verified-seal (guarantee/trust seal)",
+        "sun-disc (warm central sun focal disc)",
+        "quote-marks (oversized editorial quote glyphs)",
+        "stage-brackets (framing brackets)"
+    ]
+    shape_options = "\n".join([f"- {s}" for s in vector_shapes])
+
 
     brand_kit_constraints = []
     if brand_palette_id:
         brand_kit_constraints.append(f"MUST use palette_id '{brand_palette_id}'")
     if brand_font_pair_id:
         brand_kit_constraints.append(f"MUST use font_pair_id '{brand_font_pair_id}'")
+    if template_id and template_id != "auto":
+        matched_tmpl = next((t for t in TEMPLATES if t["id"] == template_id), None)
+        slots_desc = f"Slots: {', '.join(matched_tmpl.get('slots', {}).keys())}" if matched_tmpl else "Use declared slots"
+        brand_kit_constraints.append(f"MANDATORY: You MUST use template_id '{template_id}' with {slots_desc}")
     brand_kit_str = ", ".join(brand_kit_constraints) if brand_kit_constraints else "None"
 
     concept_hints = []
@@ -132,65 +168,47 @@ def run_art_director(
         )
     else:
         background_policy = (
-            "Photo backgrounds are NOT allowed. Do not add any 'photo' or 'cat_photo' elements. Use 'background_color' and shapes."
+            "Photo backgrounds are NOT allowed. Do not add any 'photo' or 'cat_photo' elements. Use 'background_color', 'sunburst-rays', or vector shapes."
         )
 
-    system_prompt = f"""You are a Master Graphic Designer acting as the Art Director for a poster/social-post generation system. You have a full professional toolkit available — your job is to actually USE it thoughtfully for every single request, not default to the safest, plainest option.
+    system_prompt = f"""You are a Master Graphic Designer acting as the Art Director for a Canva-grade poster generation system. You have a full professional toolkit available — your job is to actually USE it thoughtfully for every single request, not default to the safest, plainest option.
 
 You are designing using an explicit slot-based template system for a 1080x1080 canvas.
 You must choose a `template_id` and assign EVERY element to a valid `slot` defined by that template.
-The orchestrator will automatically calculate the exact X, Y, Width, and Height for each slot.
-You must use your freedom to select the best template, typography (font_size), colors, overlapping (z_index), and visual assets to create highly attractive, dynamic designs.
+
+CANVA-GRADE DESIGN PRINCIPLES TO FOLLOW:
+1. THEMATIC VISUAL ASSETS & ILLUSTRATIONS:
+   - For summer/sales/energy: add `sunburst-rays` (z_index=0) and `tropical-palm-fronds` corner accents.
+   - For tech/saas: add `dot-matrix` (z_index=0) and `tech-corner-brackets`.
+   - For quotes/editorial: add `quote-marks` or `vintage-flourish`.
+   - For promos/discounts: add `starburst-badge` or `ribbon-banner` with clear `badge_text` (e.g. "50% OFF").
+
+2. STRICT SEMANTIC DEDUPLICATION (ZERO REPEATED TEXT):
+   - Every text element MUST have unique semantic content.
+   - If "LIMITED TIME" or "50% OFF" is in the badge, DO NOT repeat it verbatim in the headline or subheadline.
+   - Headline should be the hook ("SUMMER MEGA SALE"), subheadline gives key value ("All Swimwear & Accessories On Sale"), and CTA is the action ("SHOP NOW").
+
+3. HIGH-CONVERTING CTA BUTTONS:
+   - Always formulate punchy, active button text for `cta_text` (e.g. "SHOP NOW", "CLAIM DEAL", "GET STARTED", "EXPLORE NOW").
+
+4. NEVER EMIT EMPTY PLACEHOLDERS:
+   - If you add a badge or shape, you MUST specify its `shape_id` and `badge_text` or `content`. Do not leave elements empty.
 
 AVAILABLE RESOURCES:
 
-1. BACKGROUND: You must choose a `background_color`.
-BACKGROUND SOURCE POLICY FOR THIS REQUEST:
+1. BACKGROUND SOURCE POLICY FOR THIS REQUEST:
 {background_policy}
 
-2. CONTRAST OVERLAY: If you use a photo background, you MUST ensure text is readable. You can do this by adding a semi-transparent `shape` (e.g. opacity 0.5, color #000000) behind the text with an appropriate z_index.
-
-3. TYPOGRAPHY: Add text elements for headlines, subheadlines, quotes, or CTAs. 
-   - Define your own `font_size`. Want a massive heading? Set font_size to 150.
-   - Set `color`, `font_weight`, and `text_align`.
-
-4. SHAPES/BADGES: ribbons, price bubbles, dividers, corner accents, arrows. These exist because flat text reads as unfinished. Use one when it would strengthen the focal point.
-
-5. ICONS (200,000+ via Iconify) and EMOJI (Twemoji) — use to reinforce the topic visually, not as decoration for its own sake. Provide a description (e.g., "pizza slice") and the resolver will find it.
-
-6. PALETTES, FONT PAIRS — selected by id from the provided lists.
-
----
-
-IMPORTANT RULES:
-1. `template_id` MUST be chosen from AVAILABLE TEMPLATES.
-2. `palette_id` MUST be chosen from AVAILABLE PALETTES.
-3. `font_pair_id` MUST be chosen from AVAILABLE FONT PAIRS.
-4. For each element in `elements`:
-   - Set `type` to one of: "text", "icon", "emoji", "cat_photo", "shape", "badge", "photo".
-   - Set `slot` to a VALID slot name from your chosen `template_id`.
-   - Set `description` to a concise English phrase for visual assets.
-   - For `text`, set `content`, `font_size`, and `color`.
-5. MUST output ONLY valid JSON matching the schema below.
-
-Now generate the poster JSON for the following topic:
-
-TOPIC: {topic}
-MOOD HINT (optional): {mood_hint or "None"}
-PERSONA BRAND KIT (if locked): {brand_kit_str}
-CAMPAIGN GRAPHIC CONCEPT HINTS:
-{concept_hints_str}
-
-AVAILABLE TEMPLATES:
+2. AVAILABLE TEMPLATES:
 {template_options}
 
-AVAILABLE PALETTES:
+3. AVAILABLE PALETTES:
 {palette_options}
 
-AVAILABLE FONT PAIRS:
+4. AVAILABLE FONT PAIRS:
 {font_pair_options}
 
-AVAILABLE SHAPES:
+5. AVAILABLE VECTOR SHAPES & BADGES:
 {shape_options}
 
 OUTPUT SCHEMA:
@@ -204,20 +222,21 @@ OUTPUT SCHEMA:
   "elements": [
     {{
       "type": "text|icon|emoji|cat_photo|shape|badge|photo",
-      "role": "string (e.g. headline, background, accent)",
+      "role": "string (e.g. headline, background, accent, badge, cta)",
       "slot": "string (must exist in chosen template)",
       "description": "string (optional)",
       "content": "string (optional, for text)",
       "z_index": 1,
       "rotation": 0, "opacity": 1.0,
       "font_size": 80, "color": "#FFFFFF", "font_weight": "bold", "text_align": "left",
-      "shape_id": "string (optional, for shape/badge)",
-      "badge_text": "string (optional)",
+      "shape_id": "string (optional, chosen from AVAILABLE VECTOR SHAPES)",
+      "badge_text": "string (optional, for badges)",
       "badge_icon": "string (optional)"
     }}
   ]
 }}
 """
+
 
     user_prompt = f"Create a poster design for this topic: {topic}"
     if headline_hint:
@@ -264,6 +283,14 @@ OUTPUT SCHEMA:
 
     try:
         data = json.loads(cleaned)
+        if "background_color" not in data or not data.get("background_color"):
+            palette = next((p for p in PALETTES if p.get("id") == data.get("palette_id")), None)
+            if palette:
+                bg = palette.get("background", {})
+                data["background_color"] = bg.get("hex") or bg.get("from") or "#121212"
+            else:
+                data["background_color"] = "#121212"
+
         if "elements" in data and isinstance(data["elements"], list):
             for el in data["elements"]:
                 if isinstance(el, dict):
@@ -278,10 +305,15 @@ OUTPUT SCHEMA:
                         el["type"] = "shape"
                     elif any(w in el_type for w in ("photo", "image", "bg", "background")):
                         el["type"] = "photo"
+
+        if template_id and template_id != "auto":
+            data["template_id"] = template_id
+
         return ArtDirectorOutput(**data)
     except Exception as e:
         logger.error(f"Failed to parse Art Director output: {e}\nRaw output: {response_text}")
         raise ValueError(f"Art Director output validation failed: {e}")
+
 
 def run_art_director_mutation(
     mutation_prompt: str,

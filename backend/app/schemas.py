@@ -208,6 +208,9 @@ class AIPersonaBase(BaseModel):
     template_reference_image_url: str | None = None
     brand_palette_id: str | None = None
     brand_font_pair_id: str | None = None
+    content_mode: str = "standard"
+    meme_format_preference: str | None = "modern_card"
+    meme_theme_id: str | None = None
 
 
 class AIPersonaCreate(AIPersonaBase):

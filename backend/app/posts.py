@@ -375,27 +375,112 @@ def _build_facebook_post_request(
     media_urls: list[str] | None = None,
     link_url: str | None = None,
     image_url: str | None = None,
-) -> tuple[str, dict[str, str]]:
+) -> tuple[str, dict[str, str], dict | None, str | None]:
+    """
+    Build Facebook post request payload.
+    Returns: (endpoint, form_data, files_dict_or_None, remote_url_for_binary_fallback_or_None)
+    """
     photo_url = image_url
-    if not photo_url and media_urls and media_urls[0] and not link_url:
+    if not photo_url and media_urls and media_urls[0]:
         photo_url = media_urls[0]
 
-    if photo_url:
-        return f"{connection.page_id}/photos", {
-            "message": message,
-            "url": photo_url,
-            "access_token": token,
-        }
+    # If we have a photo AND a link_url, ensure link_url is appended to the caption message
+    caption = message
+    if photo_url and link_url and link_url.strip() and link_url.strip() not in caption:
+        caption = f"{caption.rstrip()}\n\n{link_url.strip()}"
 
-    params: dict[str, str] = {
+    if photo_url:
+        # Case A: Base64 Data URI
+        if photo_url.startswith("data:image/"):
+            import base64
+            try:
+                header, encoded = photo_url.split(",", 1)
+                content_type = "image/png"
+                if "image/jpeg" in header or "image/jpg" in header:
+                    content_type = "image/jpeg"
+                elif "image/webp" in header:
+                    content_type = "image/webp"
+                elif "image/gif" in header:
+                    content_type = "image/gif"
+                img_bytes = base64.b64decode(encoded)
+                filename = "poster.jpg" if "jpeg" in content_type else "poster.png"
+                files = {"source": (filename, img_bytes, content_type)}
+                params = {
+                    "message": caption,
+                    "access_token": token,
+                }
+                return f"{connection.page_id}/photos", params, files, None
+            except Exception as e:
+                logging.warning(f"Failed to decode base64 photo_url: {e}")
+
+        # Case B: Remote URL (e.g. Supabase or external CDN)
+        return (
+            f"{connection.page_id}/photos",
+            {
+                "message": caption,
+                "url": photo_url,
+                "access_token": token,
+            },
+            None,
+            photo_url,
+        )
+
+    # Case C: Text / Link-only feed post
+    params = {
         "message": message,
         "access_token": token,
     }
     if link_url:
         params["link"] = link_url
-    elif media_urls and media_urls[0]:
-        params["link"] = media_urls[0]
-    return f"{connection.page_id}/feed", params
+    return f"{connection.page_id}/feed", params, None, None
+
+
+async def _post_to_facebook_graph_api(
+    endpoint: str,
+    params: dict[str, str],
+    files: dict | None = None,
+    fallback_url: str | None = None,
+    token: str | None = None,
+) -> httpx.Response:
+    """
+    Executes a POST request to Facebook Graph API with automatic binary upload fallback
+    if URL ingestion fails.
+    """
+    timeout = 45.0
+    async with httpx.AsyncClient(base_url=FACEBOOK_GRAPH_API_BASE_URL, timeout=timeout) as client:
+        if files:
+            response = await client.post(endpoint, data=params, files=files)
+        else:
+            response = await client.post(endpoint, data=params)
+
+        # If Facebook failed to download image from the provided URL, fallback to downloading
+        # the bytes ourselves and uploading directly as binary (multipart form-data 'source')
+        if response.status_code >= 400 and fallback_url and endpoint.endswith("/photos"):
+            err_code = _facebook_error_code(response)
+            err_msg = response.text.lower()
+            if err_code == 100 or "download" in err_msg or "url" in err_msg or "param" in err_msg:
+                try:
+                    logging.info(f"Facebook URL fetch failed. Attempting direct binary upload for {fallback_url[:80]}...")
+                    async with httpx.AsyncClient(timeout=30) as dl_client:
+                        dl_resp = await dl_client.get(fallback_url)
+                        if dl_resp.status_code == 200 and dl_resp.content:
+                            c_type = dl_resp.headers.get("content-type", "image/png").split(";")[0].strip()
+                            if not c_type.startswith("image/"):
+                                c_type = "image/png"
+                            fname = "poster.jpg" if "jpeg" in c_type else "poster.png"
+                            retry_files = {"source": (fname, dl_resp.content, c_type)}
+                            retry_params = {
+                                "message": params.get("message", ""),
+                                "access_token": token or params.get("access_token", ""),
+                            }
+                            retry_resp = await client.post(endpoint, data=retry_params, files=retry_files)
+                            if retry_resp.status_code < 400:
+                                logging.info("Direct binary upload fallback succeeded.")
+                                return retry_resp
+                except Exception as fallback_exc:
+                    logging.warning(f"Direct binary upload fallback attempt failed: {fallback_exc}")
+
+        return response
 
 
 async def verify_page_connection_for_publish(
@@ -434,6 +519,163 @@ async def verify_page_connection_for_publish(
     return token
 
 
+async def _upload_single_photo_to_facebook(
+    page_id: str,
+    token: str,
+    photo_item: str,
+    published: bool = True,
+    caption: str | None = None,
+) -> tuple[str | None, str | None]:
+    """
+    Upload a single photo to /{page_id}/photos.
+    Returns (photo_id, error_message).
+    """
+    endpoint = f"{page_id}/photos"
+    params: dict[str, str] = {
+        "access_token": token,
+        "published": "true" if published else "false",
+    }
+    if caption:
+        params["message"] = caption
+
+    files = None
+    fallback_url = None
+
+    if photo_item.startswith("data:image/"):
+        import base64
+        try:
+            header, encoded = photo_item.split(",", 1)
+            content_type = "image/png"
+            if "image/jpeg" in header or "image/jpg" in header:
+                content_type = "image/jpeg"
+            elif "image/webp" in header:
+                content_type = "image/webp"
+            elif "image/gif" in header:
+                content_type = "image/gif"
+            img_bytes = base64.b64decode(encoded)
+            filename = "poster.jpg" if "jpeg" in content_type else "poster.png"
+            files = {"source": (filename, img_bytes, content_type)}
+        except Exception as e:
+            return None, f"Failed to decode base64 image: {e}"
+    else:
+        params["url"] = photo_item
+        fallback_url = photo_item
+
+    response = await _post_to_facebook_graph_api(
+        endpoint=endpoint,
+        params=params,
+        files=files,
+        fallback_url=fallback_url,
+        token=token,
+    )
+
+    if response.status_code < 400:
+        data = response.json()
+        photo_id = data.get("id") or data.get("post_id")
+        return str(photo_id) if photo_id else None, None
+
+    err_msg = _facebook_publish_error_message(response)
+    return None, err_msg
+
+
+async def _publish_payload_to_facebook(
+    connection: models.FacebookConnection,
+    token: str,
+    message: str,
+    media_urls: list[str] | None = None,
+    link_url: str | None = None,
+    image_url: str | None = None,
+) -> tuple[bool, str | None, str | None]:
+    """
+    Publishes single photo, multi-photo carousel, or feed post to Facebook.
+    Returns: (success: bool, facebook_post_id: str | None, error_message: str | None)
+    """
+    valid_media: list[str] = []
+    if image_url and image_url.strip():
+        valid_media.append(image_url.strip())
+    if media_urls:
+        for m in media_urls:
+            if m and m.strip() and m.strip() not in valid_media:
+                valid_media.append(m.strip())
+
+    caption = message
+    if valid_media and link_url and link_url.strip() and link_url.strip() not in caption:
+        caption = f"{caption.rstrip()}\n\n{link_url.strip()}"
+
+    # Scenario 1: Multi-photo batch (> 1 photos)
+    if len(valid_media) > 1:
+        uploaded_photo_ids = []
+        last_error = None
+        for idx, media_item in enumerate(valid_media):
+            photo_id, err = await _upload_single_photo_to_facebook(
+                page_id=str(connection.page_id),
+                token=token,
+                photo_item=media_item,
+                published=False,
+            )
+            if photo_id:
+                uploaded_photo_ids.append(photo_id)
+            else:
+                last_error = err
+                logging.warning(f"Failed to upload photo {idx} in multi-photo batch: {err}")
+
+        if uploaded_photo_ids:
+            import json
+            feed_params: dict[str, str] = {
+                "message": caption,
+                "access_token": token,
+            }
+            for i, pid in enumerate(uploaded_photo_ids):
+                feed_params[f"attached_media[{i}]"] = json.dumps({"media_fbid": pid})
+
+            feed_resp = await _post_to_facebook_graph_api(
+                endpoint=f"{connection.page_id}/feed",
+                params=feed_params,
+                token=token,
+            )
+            if feed_resp.status_code < 400:
+                data = feed_resp.json()
+                f_id = data.get("id") or data.get("post_id")
+                return True, str(f_id) if f_id else None, None
+            else:
+                return False, None, _facebook_publish_error_message(feed_resp)
+        elif last_error:
+            return False, None, last_error
+
+    # Scenario 2: Single photo post (1 photo)
+    if len(valid_media) == 1:
+        photo_id, err = await _upload_single_photo_to_facebook(
+            page_id=str(connection.page_id),
+            token=token,
+            photo_item=valid_media[0],
+            published=True,
+            caption=caption,
+        )
+        if photo_id:
+            return True, photo_id, None
+        return False, None, err
+
+    # Scenario 3: Text or Link feed post (0 photos)
+    feed_params = {
+        "message": message,
+        "access_token": token,
+    }
+    if link_url:
+        feed_params["link"] = link_url
+
+    response = await _post_to_facebook_graph_api(
+        endpoint=f"{connection.page_id}/feed",
+        params=feed_params,
+        token=token,
+    )
+    if response.status_code < 400:
+        data = response.json()
+        f_id = data.get("id") or data.get("post_id")
+        return True, str(f_id) if f_id else None, None
+
+    return False, None, _facebook_publish_error_message(response)
+
+
 async def publish_post_to_facebook(
     db: Session,
     post_log: models.PostLog,
@@ -460,24 +702,16 @@ async def publish_post_to_facebook(
     if not image_url and post_log.image_url:
         image_url = post_log.image_url
 
-    endpoint, params = _build_facebook_post_request(
-        connection,
-        token,
-        post_log.content,
+    success, facebook_post_id, error_message = await _publish_payload_to_facebook(
+        connection=connection,
+        token=token,
+        message=post_log.content,
         media_urls=post_log.media_urls,
         link_url=post_log.link_url,
         image_url=image_url,
     )
 
-    async with httpx.AsyncClient(base_url=FACEBOOK_GRAPH_API_BASE_URL) as client:
-        response = await client.post(
-            endpoint,
-            data=params,
-        )
-
-    if response.status_code < 400:
-        data = response.json()
-        facebook_post_id = data.get("post_id") or data.get("id")
+    if success and facebook_post_id:
         posted_at = datetime.now(timezone.utc)
         post_log.status = "published"
         post_log.error_message = None
@@ -486,19 +720,18 @@ async def publish_post_to_facebook(
         post_log.published_at = posted_at
         post_log.post_date = post_date or posted_at.date()
         post_log.facebook_post_id = facebook_post_id
-        post_log.facebook_post_url = (
-            f"https://www.facebook.com/{facebook_post_id}" if facebook_post_id else None
-        )
+        post_log.facebook_post_url = f"https://www.facebook.com/{facebook_post_id}"
         db.commit()
         return True
 
-    error_code = _facebook_error_code(response)
-    error_message = _facebook_publish_error_message(response)
+    error_code = None
+    if error_message and ("expired" in error_message.lower() or "permission" in error_message.lower()):
+        error_code = 190
     _mark_connection_needs_reconnection(db, connection, error_code)
 
     post_log.status = "failed"
-    post_log.error_message = error_message
-    post_log.publish_error = error_message
+    post_log.error_message = error_message or "Facebook publish failed."
+    post_log.publish_error = post_log.error_message
     post_log.retry_count += 1
     db.commit()
     return False
@@ -519,19 +752,48 @@ def _facebook_publish_error_message(response: httpx.Response) -> str:
         data = json.loads(error_text)
         error_data = data.get("error", {})
         error_code = error_data.get("code")
-        error_message = error_data.get("message") or error_text
+        error_subcode = error_data.get("error_subcode")
+        raw_message = error_data.get("message") or error_text
     except Exception:
         error_code = None
-        error_message = error_text
+        error_subcode = None
+        raw_message = error_text
 
     if error_code == 190:
-        return "Your Facebook connection has expired. Please reconnect your page."
+        if error_subcode == 460:
+            return "Your Facebook session expired because your password was changed. Please reconnect your page."
+        if error_subcode == 463:
+            return "Your Facebook token has expired. Please reconnect your page in Settings."
+        if error_subcode == 467:
+            return "Invalid Facebook access token. Please reconnect your page in Settings."
+        return "Your Facebook connection has expired or was revoked. Please reconnect your page in Settings."
+
     if error_code == 200:
         return (
-            "Permission error. Reconnect your Facebook page and approve "
-            "pages_read_engagement and pages_manage_posts with admin access."
+            "Facebook Permission Error: The connected Facebook account lacks 'CREATE_CONTENT' permission "
+            "on this Page, or the Meta App requires App Review approval for 'pages_manage_posts'."
         )
-    return error_message
+
+    if error_code == 100:
+        if error_subcode == 33 or "download" in raw_message.lower():
+            return "Facebook could not download the image from the storage URL. The image was re-sent or may need to be uploaded again."
+        if "url" in raw_message.lower():
+            return f"Invalid image URL provided to Facebook: {raw_message}"
+        return f"Facebook rejected post parameters: {raw_message}"
+
+    if error_code == 368:
+        return "Facebook temporarily blocked posting for this page due to repeated actions or spam policies. Please wait and try again later."
+
+    if error_code in (4, 17, 32):
+        return "Facebook API rate limit reached. Please wait a few minutes before publishing again."
+
+    if error_code == 506:
+        return "Duplicate post: Facebook rejected this post because identical content was published recently."
+
+    if error_code == 1:
+        return "Facebook temporary server error. Please retry in a few moments."
+
+    return raw_message
 
 
 async def publish_message_to_facebook(
@@ -565,20 +827,15 @@ async def publish_message_to_facebook(
         db.refresh(post_log)
         return False, post_log, None
 
-    endpoint, params = _build_facebook_post_request(
-        connection,
-        token,
-        message,
+    success, facebook_post_id, error_message = await _publish_payload_to_facebook(
+        connection=connection,
+        token=token,
+        message=message,
         media_urls=media_urls,
         link_url=link_url,
     )
 
-    async with httpx.AsyncClient(base_url=FACEBOOK_GRAPH_API_BASE_URL) as client:
-        response = await client.post(endpoint, data=params)
-
-    if response.status_code < 400:
-        data = response.json()
-        facebook_post_id = data.get("post_id") or data.get("id")
+    if success and facebook_post_id:
         posted_at = datetime.now(timezone.utc)
         post_log.status = "published"
         post_log.error_message = None
@@ -587,21 +844,19 @@ async def publish_message_to_facebook(
         post_log.published_at = posted_at
         post_log.post_date = posted_at.date()
         post_log.facebook_post_id = facebook_post_id
-        post_log.facebook_post_url = (
-            f"https://www.facebook.com/{facebook_post_id}" if facebook_post_id else None
-        )
+        post_log.facebook_post_url = f"https://www.facebook.com/{facebook_post_id}"
         db.commit()
         db.refresh(post_log)
-        post_url = post_log.facebook_post_url
-        return True, post_log, post_url
+        return True, post_log, post_log.facebook_post_url
 
-    error_code = _facebook_error_code(response)
-    error_message = _facebook_publish_error_message(response)
+    error_code = None
+    if error_message and ("expired" in error_message.lower() or "permission" in error_message.lower()):
+        error_code = 190
     _mark_connection_needs_reconnection(db, connection, error_code)
 
     post_log.status = "failed"
-    post_log.error_message = error_message
-    post_log.publish_error = error_message
+    post_log.error_message = error_message or "Facebook publish failed."
+    post_log.publish_error = post_log.error_message
     post_log.retry_count += 1
     db.commit()
     db.refresh(post_log)

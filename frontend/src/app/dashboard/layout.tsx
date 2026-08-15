@@ -76,26 +76,18 @@ const navGroups = [
     icon: Layers,
     items: [
       { href: "/dashboard/create", label: "Create Post", icon: PenLine },
+      { href: "/dashboard/ai-settings", label: "AI Personas & Prompts", icon: Sparkles },
       { href: "/dashboard/memes", label: "Meme Studio", icon: Laugh },
       { href: "/dashboard/scheduled", label: "Scheduled Posts", icon: CalendarClock },
       { href: "/dashboard/published", label: "Published Posts", icon: FileText },
     ]
   },
   {
-    title: "Brand Intelligence",
-    icon: BrainCircuit,
-    items: [
-      { href: "/dashboard/ai-settings", label: "Prompt Studio", icon: Sparkles },
-      { href: "/dashboard/style-analyzer", label: "Style Analyzer", icon: Search },
-      { href: "/dashboard/page-tracker", label: "Page Tracker", icon: Radar },
-    ]
-  },
-  {
-    title: "Design Workbench",
+    title: "Design & Setup",
     icon: Palette,
     items: [
-      { href: "/dashboard/templates", label: "Templates", icon: Image },
-      { href: "/dashboard/settings", label: "Settings", icon: Settings },
+      { href: "/dashboard/templates", label: "Poster Templates", icon: Image },
+      { href: "/dashboard/settings", label: "Settings & Typography", icon: Settings },
     ]
   }
 ]

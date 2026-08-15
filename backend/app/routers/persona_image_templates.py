@@ -246,18 +246,25 @@ def _ensure_default_template_assets(db: Session, user_id: int) -> None:
             .filter(models.TemplateFontAsset.user_id == user_id)
             .all()
         }
-        for display_name, weight, font_path in _DEFAULT_FONT_ASSETS:
-            if font_path.lower() not in existing_font_paths and _resolve_font_path(font_path):
-                db.add(
-                    models.TemplateFontAsset(
-                        id=str(uuid.uuid4()),
-                        user_id=user_id,
-                        display_name=display_name,
-                        font_file_url=font_path,
-                        weight=weight,
-                        created_at=datetime.now(timezone.utc),
-                    )
-                )
+        fonts_dir = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts")
+        if os.path.exists(fonts_dir):
+            for f in os.listdir(fonts_dir):
+                if f.lower().endswith((".ttf", ".otf", ".woff", ".woff2")):
+                    clean_name = os.path.splitext(f)[0].replace("-Bold", " Bold").replace("-Regular", " Regular")
+                    rel_path = f"assets/fonts/{f}"
+                    if rel_path.lower() not in existing_font_paths:
+                        weight = "bold" if "bold" in f.lower() else "regular"
+                        db.add(
+                            models.TemplateFontAsset(
+                                id=str(uuid.uuid4()),
+                                user_id=user_id,
+                                display_name=clean_name,
+                                font_file_url=rel_path,
+                                weight=weight,
+                                created_at=datetime.now(timezone.utc),
+                            )
+                        )
+                        existing_font_paths.add(rel_path.lower())
         db.commit()
         return
 

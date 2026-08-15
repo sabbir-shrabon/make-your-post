@@ -94,6 +94,7 @@ from app.routers.schedule_routes import router as schedule_routes_router
 from app.routers.stock_photos import router as stock_photos_router
 from app.routers.cat_photos import router as cat_photos_router
 from app.routers.poster_studio import router as poster_studio_router
+from app.routers.poster_templates import router as poster_templates_router
 from app.routers.campaign import router as campaign_router
 from app.routers.meme import router as meme_router
 from app.routers.fonts import router as fonts_router
@@ -181,6 +182,7 @@ def _run_database_migrations() -> None:
             '16 health_check_fixes.sql',
             '17 repair_persona_save_and_scheduling_schema.sql',
             '19 drop_legacy_persona_schedule_columns.sql',
+            '25_add_performance_indexes.sql',
         ]
 
         with engine.begin() as conn:
@@ -426,6 +428,7 @@ app.include_router(schedule_routes_router)
 app.include_router(stock_photos_router)
 app.include_router(cat_photos_router)
 app.include_router(poster_studio_router)
+app.include_router(poster_templates_router)
 app.include_router(campaign_router)
 app.include_router(meme_router)
 app.include_router(fonts_router)
@@ -933,18 +936,27 @@ def _schedule_persona_posts(db: Session, persona: models.AIPersona, user: models
     print(f"Schedule saved and today's slots registered for persona {persona.persona_name}")
 
 
-def _serialize_ai_persona(persona: models.AIPersona) -> dict:
-    image_settings = None
-    session = object_session(persona)
-    if session is not None:
-        try:
-            image_settings = (
-                session.query(models.ImagePromptSettings)
-                .filter(models.ImagePromptSettings.persona_id == persona.id)
-                .first()
-            )
-        except Exception:
+_UNSET = object()
+
+
+def _serialize_ai_persona(
+    persona: models.AIPersona,
+    image_settings: models.ImagePromptSettings | None | object = _UNSET,
+) -> dict:
+    if image_settings is _UNSET:
+        session = object_session(persona)
+        if session is not None:
+            try:
+                image_settings = (
+                    session.query(models.ImagePromptSettings)
+                    .filter(models.ImagePromptSettings.persona_id == persona.id)
+                    .first()
+                )
+            except Exception:
+                image_settings = None
+        else:
             image_settings = None
+
     return {
         "id": persona.id,
         "page_connection_id": persona.page_connection_id,
@@ -1490,7 +1502,24 @@ def list_ai_personas(
         .order_by(models.AIPersona.id.asc())
         .all()
     )
-    return [_serialize_ai_persona(persona) for persona in personas]
+    if not personas:
+        return []
+
+    persona_ids = [p.id for p in personas]
+    img_settings_map: dict[int, models.ImagePromptSettings] = {}
+    if persona_ids:
+        try:
+            settings_rows = (
+                db.query(models.ImagePromptSettings)
+                .filter(models.ImagePromptSettings.persona_id.in_(persona_ids))
+                .all()
+            )
+            for s in settings_rows:
+                img_settings_map[s.persona_id] = s
+        except Exception:
+            pass
+
+    return [_serialize_ai_persona(persona, image_settings=img_settings_map.get(persona.id)) for persona in personas]
 
 
 @app.post("/api/ai/personas/{page_connection_id}", response_model=schemas.AIPersonaRead, status_code=status.HTTP_201_CREATED)
@@ -2649,15 +2678,21 @@ async def generate_and_publish_ai_post(
             .first()
         )
         if assignment:
-            from app.routers.persona_image_templates import generate_post_image_background
+            from app.routers.persona_image_templates import _run_post_image_generation
+            try:
+                generation = await _run_post_image_generation(
+                    db,
+                    post_log.id,
+                    current_user.id,
+                    template_id=assignment.image_template_id,
+                    raise_errors=False,
+                )
+                if generation and generation.final_image_url:
+                    post_log.image_url = generation.final_image_url
+                    db.commit()
+            except Exception as img_exc:
+                logging.warning("Auto post image generation failed: %s", img_exc)
 
-            post_log.image_url = None
-            background_tasks.add_task(
-                generate_post_image_background,
-                post_log.id,
-                current_user.id,
-                assignment.image_template_id,
-            )
         success = await publish_post_to_facebook(db, post_log, connection)
         return {"success": success, "id": post_log.id, "status": post_log.status, "error_message": post_log.error_message}
     except ProviderConfigurationError as exc:
@@ -3087,52 +3122,107 @@ async def publish_post(
     }
 
 
-@app.get("/posts/history", response_model=list[schemas.PostHistoryItem])
-def post_history(
-    limit: int = Query(default=5, ge=1, le=50),
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    posts = (
-        db.query(models.PostLog, models.FacebookConnection)
-        .join(models.FacebookConnection, models.FacebookConnection.id == models.PostLog.facebook_connection_id)
-        .filter(models.PostLog.user_id == current_user.id)
-        .order_by(
-            models.PostLog.posted_at.desc().nullslast(),
-            models.PostLog.id.desc(),
+def _serialize_posts_batch(
+    posts_with_connections: list[tuple[models.PostLog, models.FacebookConnection | None]],
+    db: Session,
+) -> list[dict]:
+    if not posts_with_connections:
+        return []
+
+    post_ids = [post.id for post, _ in posts_with_connections if post.id]
+    persona_ids = list({post.ai_persona_id for post, _ in posts_with_connections if post.ai_persona_id})
+
+    # Bulk query latest PostEngagementSnapshot per post
+    snapshot_map: dict[int, models.PostEngagementSnapshot] = {}
+    if post_ids:
+        snapshots = (
+            db.query(models.PostEngagementSnapshot)
+            .filter(models.PostEngagementSnapshot.post_id.in_(post_ids))
+            .order_by(models.PostEngagementSnapshot.snapshot_taken_at.desc())
+            .all()
         )
-        .limit(limit)
-        .all()
-    )
-    return [_serialize_post(post, connection) for post, connection in posts]
+        for snap in snapshots:
+            if snap.post_id not in snapshot_map:
+                snapshot_map[snap.post_id] = snap
+
+    # Bulk query AIPersona
+    persona_map: dict[int, models.AIPersona] = {}
+    if persona_ids:
+        personas = (
+            db.query(models.AIPersona)
+            .filter(models.AIPersona.id.in_(persona_ids))
+            .all()
+        )
+        for p in personas:
+            persona_map[p.id] = p
+
+    # Bulk query PostImageGeneration
+    image_gen_map: dict[int, models.PostImageGeneration] = {}
+    if post_ids:
+        try:
+            gens = (
+                db.query(models.PostImageGeneration)
+                .filter(models.PostImageGeneration.post_id.in_(post_ids))
+                .all()
+            )
+            for g in gens:
+                image_gen_map[g.post_id] = g
+        except Exception:
+            pass
+
+    return [
+        _serialize_post(
+            post,
+            connection,
+            snapshot=snapshot_map.get(post.id),
+            persona=persona_map.get(post.ai_persona_id) if post.ai_persona_id else None,
+            image_generation=image_gen_map.get(post.id),
+        )
+        for post, connection in posts_with_connections
+    ]
 
 
-def _serialize_post(post: models.PostLog, connection: models.FacebookConnection | None = None):
-    latest_snapshot = None
-    threshold = 0
+def _serialize_post(
+    post: models.PostLog,
+    connection: models.FacebookConnection | None = None,
+    snapshot: models.PostEngagementSnapshot | None | object = _UNSET,
+    persona: models.AIPersona | None | object = _UNSET,
+    image_generation: models.PostImageGeneration | None | object = _UNSET,
+):
     db = object_session(post)
-    if post.id:
-        if db is not None:
-            latest_snapshot = (
+    if snapshot is _UNSET:
+        if post.id and db is not None:
+            snapshot = (
                 db.query(models.PostEngagementSnapshot)
                 .filter(models.PostEngagementSnapshot.post_id == post.id)
                 .order_by(models.PostEngagementSnapshot.snapshot_taken_at.desc())
                 .first()
             )
-            if post.ai_persona_id:
-                persona = db.get(models.AIPersona, post.ai_persona_id)
-                threshold = float(persona.minimum_engagement_threshold or 0) if persona else 0
-    score = float(latest_snapshot.engagement_score or 0) if latest_snapshot else 0
-    image_generation = None
-    persona = None
-    if post.id and db is not None:
-        image_generation = (
-            db.query(models.PostImageGeneration)
-            .filter(models.PostImageGeneration.post_id == post.id)
-            .first()
-        )
-        if post.ai_persona_id:
+        else:
+            snapshot = None
+
+    if persona is _UNSET:
+        if post.ai_persona_id and db is not None:
             persona = db.get(models.AIPersona, post.ai_persona_id)
+        else:
+            persona = None
+
+    if image_generation is _UNSET:
+        if post.id and db is not None:
+            try:
+                image_generation = (
+                    db.query(models.PostImageGeneration)
+                    .filter(models.PostImageGeneration.post_id == post.id)
+                    .first()
+                )
+            except Exception:
+                image_generation = None
+        else:
+            image_generation = None
+
+    threshold = float(persona.minimum_engagement_threshold or 0) if persona else 0
+    score = float(snapshot.engagement_score or 0) if snapshot else 0
+
     return {
         "id": post.id,
         "content": post.content,
@@ -3151,10 +3241,10 @@ def _serialize_post(post: models.PostLog, connection: models.FacebookConnection 
         "failure_reason": post.error_message,
         "ai_generated": post.ai_generated,
         "auto_generated": post.auto_generated,
-        "likes_count": latest_snapshot.likes_count if latest_snapshot else 0,
-        "comments_count": latest_snapshot.comments_count if latest_snapshot else 0,
-        "shares_count": latest_snapshot.shares_count if latest_snapshot else 0,
-        "reach_count": latest_snapshot.reach_count if latest_snapshot else 0,
+        "likes_count": snapshot.likes_count if snapshot else 0,
+        "comments_count": snapshot.comments_count if snapshot else 0,
+        "shares_count": snapshot.shares_count if snapshot else 0,
+        "reach_count": snapshot.reach_count if snapshot else 0,
         "engagement_score": score,
         "low_engagement": bool(threshold and score < threshold),
     }
@@ -3169,6 +3259,26 @@ def _today_bounds_utc(tz_name: str) -> tuple[datetime, datetime]:
     start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     end_local = start_local + timedelta(days=1)
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+@app.get("/posts/history", response_model=list[schemas.PostHistoryItem])
+def post_history(
+    limit: int = Query(default=5, ge=1, le=50),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    posts = (
+        db.query(models.PostLog, models.FacebookConnection)
+        .join(models.FacebookConnection, models.FacebookConnection.id == models.PostLog.facebook_connection_id)
+        .filter(models.PostLog.user_id == current_user.id)
+        .order_by(
+            models.PostLog.posted_at.desc().nullslast(),
+            models.PostLog.id.desc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    return _serialize_posts_batch(posts, db)
 
 
 @app.get("/posts", response_model=list[schemas.PostHistoryItem])
@@ -3196,7 +3306,8 @@ def list_posts(
         else:
             query = query.filter(models.PostLog.status == status_filter)
     order_column = models.PostLog.scheduled_at.asc() if status_filter == "scheduled" else models.PostLog.id.desc()
-    return [_serialize_post(post, connection) for post, connection in query.order_by(order_column).limit(limit).all()]
+    posts = query.order_by(order_column).limit(limit).all()
+    return _serialize_posts_batch(posts, db)
 
 
 @app.patch("/posts/{post_id}", response_model=schemas.PostHistoryItem)

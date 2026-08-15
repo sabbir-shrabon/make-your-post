@@ -30,6 +30,9 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  PenLine,
+  Search,
+  Radar,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -46,6 +49,9 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { api, getApiErrorMessage } from "@/lib/api"
 import { axiosInstance } from "@/lib/axios"
+import { AISettingsView } from "./ai-settings-view"
+import { StyleAnalyzerView } from "./style-analyzer-view"
+import { PageTrackerView } from "./page-tracker-view"
 
 // Dynamically import InteractiveCanvas for direct manipulation
 const InteractiveCanvas = dynamic(
@@ -109,18 +115,33 @@ export function Composer({
   const remaining = 63206 - content.length
   const detectedUrl = content.match(/https?:\/\/\S+/)?.[0] || ""
 
+  // --- Unified Studio Tab State ---
+  const [activeStudioTab, setActiveStudioTab] = useState<"composer" | "personas" | "style" | "tracker">("composer")
+
+  // --- AI Personas State ---
+  const [personas, setPersonas] = useState<AIPersona[]>([])
+  const [selectedPersonaId, setSelectedPersonaId] = useState<number | null>(null)
+  const activePersona = personas.find((p) => p.id === selectedPersonaId) || personas.find((p) => p.is_active) || personas[0]
+
   // Load handoff parameters & templates on mount
   useEffect(() => {
+    const tabParam = searchParams?.get("tab")
+    if (tabParam === "personas" || tabParam === "style" || tabParam === "tracker" || tabParam === "composer") {
+      setActiveStudioTab(tabParam)
+    }
+
     const topicParam = searchParams?.get("topic")
     const inspParam = searchParams?.get("inspiration")
     if (topicParam) {
       setCampaignPrompt(topicParam)
       setVisualTopic(topicParam)
       setSourceBadge(`Imported Topic: "${topicParam}"`)
+      setActiveStudioTab("composer")
     }
     if (inspParam) {
       setContent(inspParam)
       setSourceBadge("Imported Inspiration Draft")
+      setActiveStudioTab("composer")
     }
 
     try {
@@ -133,21 +154,53 @@ export function Composer({
         setMediaType("ai_poster")
         sessionStorage.removeItem("composer_prefill_image")
         setSourceBadge("Poster Graphic Imported from Poster Lab")
+        setActiveStudioTab("composer")
         toast.success("Graphic from Poster Lab loaded into Composer!")
       }
       if (storedTopic) {
         setCampaignPrompt(storedTopic)
         setVisualTopic(storedTopic)
         sessionStorage.removeItem("composer_prefill_topic")
+        setActiveStudioTab("composer")
       }
       if (storedContent) {
         setContent(storedContent)
         sessionStorage.removeItem("composer_prefill_content")
+        setActiveStudioTab("composer")
       }
     } catch {
       // ignore
     }
   }, [searchParams])
+
+  function handleUseStyleInComposer(promptText: string) {
+    setCampaignPrompt(promptText)
+    setSourceBadge("Applied Extracted Style Prompt")
+    setActiveStudioTab("composer")
+    toast.success("Applied style to Post Composer! Ready to generate.")
+  }
+
+  function handleRemixInComposer(postContent: string, topic?: string) {
+    if (topic) {
+      setCampaignPrompt(`Create a high-converting post inspired by: ${topic}`)
+      setVisualTopic(topic)
+    }
+    setContent(postContent)
+    setSourceBadge(topic ? `Remixing: "${topic}"` : "Remixing Tracked Post")
+    setActiveStudioTab("composer")
+    toast.success("Tracked post loaded into Composer! Ready to customize or generate posters.")
+  }
+
+  function handleTestPersona(persona: AIPersona) {
+    setSelectedPersonaId(persona.id ?? null)
+    if (persona.niche || persona.persona_name) {
+      setCampaignPrompt(persona.niche || persona.persona_name)
+      setVisualTopic(persona.niche || persona.persona_name)
+    }
+    setSourceBadge(`Testing Persona Voice: "${persona.persona_name}" (${persona.niche || "Custom Tone"})`)
+    setActiveStudioTab("composer")
+    toast.success(`Loaded "${persona.persona_name}" persona into Composer! Ready to test.`)
+  }
 
   useEffect(() => {
     api.get<any[]>("/api/image-templates")
@@ -156,11 +209,106 @@ export function Composer({
   }, [])
 
   useEffect(() => {
-    if (!selectedPage?.id) return setAiSettingsReady(false)
+    if (!selectedPage?.id) {
+      setPersonas([])
+      setAiSettingsReady(false)
+      return
+    }
     api.get<AIPersona[]>(`/api/ai/personas/${selectedPage.id}`)
-      .then((response) => setAiSettingsReady(response.data.some((p) => Boolean(p.niche))))
-      .catch(() => setAiSettingsReady(false))
-  }, [selectedPage?.id])
+      .then((response) => {
+        const list = response.data || []
+        setPersonas(list)
+        setAiSettingsReady(list.some((p) => Boolean(p.niche)))
+        
+        const personaParam = searchParams?.get("persona_id")
+        if (personaParam) {
+          const matched = list.find((p) => String(p.id) === personaParam)
+          if (matched) {
+            setSelectedPersonaId(matched.id ?? null)
+            setSourceBadge(`Testing Persona Voice: "${matched.persona_name}"`)
+            if (!campaignPrompt.trim() && (matched.niche || matched.persona_name)) {
+              setCampaignPrompt(matched.niche || matched.persona_name)
+            }
+          }
+        } else if (list.length > 0 && selectedPersonaId === null) {
+          const active = list.find((p) => p.is_active) || list[0]
+          setSelectedPersonaId(active.id ?? null)
+        }
+      })
+      .catch(() => {
+        setPersonas([])
+        setAiSettingsReady(false)
+      })
+  }, [selectedPage?.id, searchParams])
+
+  // --- Canva-Grade Interactive Archetype State ---
+  const [currentArchetype, setCurrentArchetype] = useState<string>("social-card")
+  const [aspectRatio, setAspectRatio] = useState<"1:1" | "4:5" | "9:16" | "16:9">("1:1")
+  const [editableHeadline, setEditableHeadline] = useState<string>("")
+  const [editableSubheadline, setEditableSubheadline] = useState<string>("")
+  const [editableBadge, setEditableBadge] = useState<string>("PRO TIP")
+  const [editableStat, setEditableStat] = useState<string>("+4.5X")
+  const [editableItems, setEditableItems] = useState<string[]>([])
+  const [editableCta, setEditableCta] = useState<string>("READ GUIDE →")
+  const [currentImageUrl, setCurrentImageUrl] = useState<string>("")
+  const [imageCandidates, setImageCandidates] = useState<string[]>([])
+  const [paletteId, setPaletteId] = useState<string>("midnight-mint")
+  const [isReRendering, setIsReRendering] = useState<boolean>(false)
+  const [isFineTuningOpen, setIsFineTuningOpen] = useState<boolean>(true)
+
+  // --- Sub-100ms Live Re-render Handler ---
+  async function triggerLiveReRender(overrides?: {
+    archetype?: string
+    aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9"
+    headline?: string
+    subheadline?: string
+    badge?: string
+    stat?: string
+    items?: string[]
+    cta?: string
+    imageUrl?: string
+    palette?: string
+  }) {
+    const arch = overrides?.archetype ?? currentArchetype
+    const ar = overrides?.aspectRatio ?? aspectRatio
+    const hl = overrides?.headline ?? editableHeadline
+    const sub = overrides?.subheadline ?? editableSubheadline
+    const bdg = overrides?.badge ?? editableBadge
+    const st = overrides?.stat ?? editableStat
+    const itms = overrides?.items ?? editableItems
+    const cta = overrides?.cta ?? editableCta
+    const img = overrides?.imageUrl ?? currentImageUrl
+    const pal = overrides?.palette ?? paletteId
+
+    if (!hl && !img) return
+
+    setIsReRendering(true)
+    try {
+      const res = await axiosInstance.post("/api/poster/render-preview", {
+        archetype_id: arch,
+        aspect_ratio: ar,
+        headline: hl,
+        subheadline: sub || undefined,
+        badge_text: bdg || undefined,
+        stat_number: st || undefined,
+        items: itms?.length ? itms : undefined,
+        cta_text: cta || undefined,
+        image_url: img || undefined,
+        brand_name: selectedPage?.page_name || "Creator",
+        handle: "@" + (selectedPage?.page_name || "creator").toLowerCase().replace(/\s+/g, ""),
+        avatar_url: selectedPage?.page_picture_url,
+        palette_id: pal,
+      })
+
+      if (res.data?.base64_image) {
+        setMedia(res.data.base64_image)
+      }
+    } catch (err) {
+      console.error("Live preview re-render failed:", err)
+    } finally {
+      setIsReRendering(false)
+    }
+  }
 
   // --- 1-Click Unified Campaign Generation ---
   async function handleGenerateUnifiedCampaign(e?: React.FormEvent) {
@@ -174,9 +322,10 @@ export function Composer({
       const res = await axiosInstance.post("/api/campaign/generate-unified", {
         topic_or_niche: campaignPrompt.trim(),
         page_connection_id: selectedPage?.id || undefined,
+        persona_id: selectedPersonaId || undefined,
         candidate_count: candidateCount,
         allow_pexels_bg: allowPexelsBg,
-        aspect_ratio: "1:1",
+        aspect_ratio: aspectRatio,
       })
 
       const data = res.data
@@ -184,6 +333,19 @@ export function Composer({
       setContent(data.post_content || "")
       setHashtags(data.hashtags || [])
       setGraphicConcept(data.graphic_concept || null)
+
+      if (data.graphic_concept) {
+        const gc = data.graphic_concept
+        setCurrentArchetype(gc.archetype_id || "social-card")
+        setEditableHeadline(gc.headline || "")
+        setEditableSubheadline(gc.subheadline || "")
+        setEditableBadge(gc.badge_text || "PRO TIP")
+        setEditableStat(gc.stat_number || "+4.5X")
+        setEditableItems(gc.items || [])
+        setEditableCta(gc.cta_text || "READ GUIDE →")
+        setCurrentImageUrl(data.poster_winner?.image_url || data.image_candidates?.[0] || "")
+        setImageCandidates(data.image_candidates || [])
+      }
 
       const variants = data.poster_variants || []
       setPosterVariants(variants)
@@ -201,7 +363,7 @@ export function Composer({
         })
       }
 
-      toast.success("Unified Campaign & Poster generated successfully!")
+      toast.success("Unified Campaign & Canva-Grade Poster generated successfully!")
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Campaign generation failed. Please try again.")
     } finally {
@@ -215,12 +377,12 @@ export function Composer({
     const variant = posterVariants[index]
     if (variant) {
       setMedia(variant.base64_image || "")
-      setActiveTrace({
-        art_director: variant.art_director,
-        resolved_assets: variant.resolved_assets,
-        final_opacity: variant.final_opacity,
-        base64_image: variant.base64_image,
-      })
+      if (variant.archetype_id) {
+        setCurrentArchetype(variant.archetype_id)
+      }
+      if (variant.image_url) {
+        setCurrentImageUrl(variant.image_url)
+      }
       toast.success(`Switched to Graphic Variant #${index + 1}`)
     }
   }
@@ -367,49 +529,134 @@ export function Composer({
 
   return (
     <div className="grid gap-6">
-      {/* Top Header */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <PageTitle
-          title="Creator Studio"
-          subtitle="Generate high-converting Facebook campaigns with synchronized post copy and on-brand graphic posters."
-        />
-        {publishablePages.length > 1 ? (
-          <div className="w-full sm:w-64">
-            <Select
-              value={String(selectedPageId ?? publishablePages[0].id)}
-              onChange={(e) => setSelectedPageId(Number(e.target.value))}
+      {/* Top Header & Unified Studio Navigation Tabs */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <PageTitle
+            title="Create Post Studio"
+            subtitle="Generate high-converting Facebook campaigns, configure AI personas, analyze writing styles, and discover competitor ideas."
+          />
+          {publishablePages.length > 1 ? (
+            <div className="w-full sm:w-64">
+              <Select
+                value={String(selectedPageId ?? publishablePages[0].id)}
+                onChange={(e) => setSelectedPageId(Number(e.target.value))}
+              >
+                {publishablePages.map((page) => (
+                  <option key={page.id} value={String(page.id)}>
+                    {page.page_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          ) : publishablePages[0] ? (
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 shadow-xs">
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-700">{publishablePages[0].page_name}</span>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Studio Sub-Navigation Tabs */}
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3 overflow-x-auto">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveStudioTab("composer")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0",
+                activeStudioTab === "composer"
+                  ? "bg-white text-purple-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
             >
-              {publishablePages.map((page) => (
-                <option key={page.id} value={String(page.id)}>
-                  {page.page_name}
-                </option>
-              ))}
-            </Select>
+              <PenLine className="size-3.5" />
+              Post Composer &amp; Posters
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudioTab("personas")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0",
+                activeStudioTab === "personas"
+                  ? "bg-white text-purple-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Sparkles className="size-3.5 text-purple-600" />
+              AI Personas &amp; Prompts
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudioTab("style")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0",
+                activeStudioTab === "style"
+                  ? "bg-white text-purple-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Search className="size-3.5 text-blue-600" />
+              Style Analyzer
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStudioTab("tracker")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0",
+                activeStudioTab === "tracker"
+                  ? "bg-white text-purple-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Radar className="size-3.5 text-emerald-600" />
+              Page Inspo Tracker
+            </button>
           </div>
-        ) : publishablePages[0] ? (
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-xs">
-            <span className="size-2 rounded-full bg-emerald-500" />
-            <span className="text-xs font-semibold text-slate-700">{publishablePages[0].page_name}</span>
-          </div>
-        ) : null}
+        </div>
       </div>
 
-      {sourceBadge && (
-        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/80 px-4 py-2.5 text-xs font-medium text-blue-900 shadow-xs">
-          <span className="flex items-center gap-2">
-            <Lightbulb className="size-4 text-blue-600 shrink-0" />
-            {sourceBadge}
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-1.5 text-blue-600 hover:bg-blue-100"
-            onClick={() => setSourceBadge(null)}
-          >
-            <X className="size-3.5" />
-          </Button>
-        </div>
+      {/* --- SUB-VIEW 1: AI PERSONAS & PROMPTS --- */}
+      {activeStudioTab === "personas" && (
+        <AISettingsView pages={pages} onTestPersona={handleTestPersona} />
       )}
+
+      {/* --- SUB-VIEW 2: STYLE ANALYZER --- */}
+      {activeStudioTab === "style" && (
+        <StyleAnalyzerView
+          pages={pages}
+          onUseInComposer={handleUseStyleInComposer}
+          onOpenPromptStudio={() => setActiveStudioTab("personas")}
+        />
+      )}
+
+      {/* --- SUB-VIEW 3: PAGE INSPO TRACKER --- */}
+      {activeStudioTab === "tracker" && (
+        <PageTrackerView
+          pages={pages}
+          onRemixPost={handleRemixInComposer}
+        />
+      )}
+
+      {/* --- SUB-VIEW 4: POST COMPOSER & POSTER STUDIO --- */}
+      {activeStudioTab === "composer" && (
+        <>
+          {sourceBadge && (
+            <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50/80 px-4 py-2.5 text-xs font-medium text-blue-900 shadow-xs">
+              <span className="flex items-center gap-2">
+                <Lightbulb className="size-4 text-blue-600 shrink-0" />
+                {sourceBadge}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-blue-600 hover:bg-blue-100"
+                onClick={() => setSourceBadge(null)}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          )}
 
       {/* --- Unified Agentic Campaign Generation Bar --- */}
       <Card className="border-indigo-100 bg-gradient-to-r from-purple-50/80 via-indigo-50/50 to-blue-50/80 shadow-xs">
@@ -428,10 +675,101 @@ export function Composer({
                 </div>
               </div>
               <div className="hidden sm:flex items-center gap-3 text-xs text-slate-600">
+                <div className="flex items-center gap-1 bg-white/90 p-0.5 rounded-lg border border-purple-200 shadow-xs">
+                  {[
+                    { id: "1:1", label: "1:1 Square" },
+                    { id: "4:5", label: "4:5 Feed" },
+                    { id: "9:16", label: "9:16 Story" },
+                    { id: "16:9", label: "16:9 Banner" },
+                  ].map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        setAspectRatio(r.id as any)
+                        triggerLiveReRender({ aspectRatio: r.id as any })
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+                        aspectRatio === r.id
+                          ? "bg-purple-600 text-white font-semibold shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      )}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <Switch checked={allowPexelsBg} onCheckedChange={setAllowPexelsBg} />
-                  <span>Stock Photography</span>
+                  <span>Stock Photos</span>
                 </label>
+              </div>
+            </div>
+
+            {/* Persona Voice Selector Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-purple-100/80">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                  <Sparkles className="size-3.5 text-purple-600" />
+                  Target Persona:
+                </span>
+                <div className="w-56 sm:w-64">
+                  <Select
+                    value={selectedPersonaId ? String(selectedPersonaId) : ""}
+                    onChange={(e) => {
+                      const val = e.target.value ? Number(e.target.value) : null
+                      setSelectedPersonaId(val)
+                      if (val) {
+                        const p = personas.find((item) => item.id === val)
+                        if (p) {
+                          setSourceBadge(`Active Persona Voice: "${p.persona_name}"`)
+                          if (!campaignPrompt.trim() && (p.niche || p.persona_name)) {
+                            setCampaignPrompt(p.niche || p.persona_name)
+                          }
+                        }
+                      }
+                    }}
+                    className="h-8 text-xs font-semibold bg-white border-purple-200"
+                  >
+                    <option value="">Auto (Default Page Voice)</option>
+                    {personas.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.persona_name} {p.content_mode === "meme" ? "😂 (Meme)" : ""} {p.niche ? `· ${p.niche}` : ""}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                {activePersona && (
+                  <span className={cn(
+                    "hidden md:inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded",
+                    activePersona.content_mode === "meme"
+                      ? "text-pink-800 bg-pink-100/90 font-bold"
+                      : "text-purple-700 bg-purple-100/70"
+                  )}>
+                    {activePersona.content_mode === "meme" ? "😂 Meme Mode: " : "Tone: "}
+                    {Array.isArray(activePersona.tone_tags) && activePersona.tone_tags.length ? activePersona.tone_tags.slice(0, 2).join(", ") : "Engaging"}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-3">
+                {activePersona?.content_mode === "meme" && (
+                  <Link
+                    href={`/dashboard/memes?persona_id=${activePersona.id}`}
+                    className="text-xs font-semibold text-pink-700 hover:text-pink-900 hover:underline flex items-center gap-1"
+                  >
+                    <span>😂</span>
+                    Open in Meme Studio →
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setActiveStudioTab("personas")}
+                  className="text-xs font-semibold text-purple-700 hover:text-purple-900 hover:underline flex items-center gap-1"
+                >
+                  Manage Personas →
+                </button>
               </div>
             </div>
 
@@ -440,7 +778,11 @@ export function Composer({
                 <Input
                   value={campaignPrompt}
                   onChange={(e) => setCampaignPrompt(e.target.value)}
-                  placeholder="e.g. 5 Time Management Hacks for Startup Founders, or Tips for First-Time Homebuyers..."
+                  placeholder={
+                    activePersona?.content_mode === "meme"
+                      ? "e.g. That moment when a client asks for a quick redesign on Friday at 5 PM..."
+                      : "e.g. 5 Time Management Hacks for Startup Founders, or Tips for First-Time Homebuyers..."
+                  }
                   className="bg-white pr-10 text-sm shadow-xs focus-visible:ring-purple-600"
                   disabled={generatingCampaign}
                 />
@@ -664,84 +1006,260 @@ export function Composer({
               </div>
             </CardHeader>
             <CardContent className="p-4 grid gap-4">
-              {/* Option 1: AI Graphic Poster */}
+              {/* Option 1: Canva-Grade AI Graphic Poster */}
               {mediaType === "ai_poster" && (
-                <div className="grid gap-3">
-                  {posterVariants.length > 0 ? (
-                    <div className="grid gap-3 rounded-lg border border-purple-100 bg-purple-50/40 p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-wider text-purple-900">
-                          Generated Design Variations ({posterVariants.length})
+                <div className="grid gap-4">
+                  {/* Archetype Selector Bar */}
+                  <div className="grid gap-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                        <Layers className="size-3.5 text-purple-600" />
+                        Design Archetype (1-Click Transform)
+                      </Label>
+                      {isReRendering && (
+                        <span className="flex items-center text-[10px] text-purple-600 font-semibold animate-pulse">
+                          <Loader2 className="size-3 animate-spin mr-1" />
+                          Rendering live preview...
                         </span>
-                        {graphicConcept && (
-                          <span className="text-xs text-purple-700">
-                            Headline: <strong className="font-semibold">"{graphicConcept.headline}"</strong>
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Variant Selector Tabs */}
-                      <div className="grid grid-cols-3 gap-2">
-                        {posterVariants.map((v, i) => (
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                      {[
+                        { id: "social-card", label: "Social Card", emoji: "🗂️" },
+                        { id: "editorial-hero", label: "Editorial", emoji: "📰" },
+                        { id: "metric-callout", label: "Stat Callout", emoji: "📊" },
+                        { id: "checklist-framework", label: "Checklist", emoji: "✅" },
+                        { id: "promo-banner", label: "Promo Banner", emoji: "🏷️" },
+                        { id: "minimal-quote", label: "Quote", emoji: "💬" },
+                      ].map((arch) => {
+                        const isActive = currentArchetype === arch.id
+                        return (
                           <button
-                            key={i}
+                            key={arch.id}
                             type="button"
-                            onClick={() => handleSelectVariant(i)}
+                            onClick={() => {
+                              setCurrentArchetype(arch.id)
+                              triggerLiveReRender({ archetype: arch.id })
+                            }}
                             className={cn(
-                              "relative flex flex-col items-center rounded-lg border p-2 transition-all text-left",
-                              selectedVariantIndex === i
-                                ? "border-purple-600 bg-white ring-2 ring-purple-600/20 shadow-xs"
-                                : "border-slate-200 bg-white/70 hover:bg-white"
+                              "flex flex-col items-center justify-center rounded-lg border py-2 px-1 text-center transition-all text-xs font-medium",
+                              isActive
+                                ? "border-purple-600 bg-purple-50 text-purple-900 shadow-xs font-bold ring-1 ring-purple-600/30"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                             )}
                           >
-                            <span className="text-xs font-bold text-slate-800">
-                              {i === 0 ? "★ Variant 1 (Best)" : `Variant ${i + 1}`}
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              Score: {(v.composite_score || v.aesthetic_score || 0.8).toFixed(2)}
-                            </span>
+                            <span className="text-base mb-0.5">{arch.emoji}</span>
+                            <span className="text-[11px] leading-tight truncate w-full">{arch.label}</span>
                           </button>
-                        ))}
-                      </div>
-
-                      {/* Quick Action to Open Workbench */}
-                      <div className="flex items-center justify-between pt-2 border-t border-purple-200/60">
-                        <span className="text-xs text-slate-600">Want to drag, resize, or replace icons?</span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 border-purple-300 text-purple-800 hover:bg-purple-100 text-xs font-semibold"
-                          onClick={() => setIsCanvasModalOpen(true)}
-                        >
-                          <Edit3 className="size-3.5 mr-1.5" />
-                          Customize in Interactive Canvas
-                        </Button>
-                      </div>
+                        )
+                      })}
                     </div>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 p-6 text-center">
-                      <ImageIcon className="size-8 text-slate-400 mb-2" />
-                      <p className="text-sm font-medium text-slate-700">No AI graphic generated yet</p>
-                      <p className="text-xs text-slate-500 mb-3">
-                        Use the Campaign Autopilot bar above, or generate a poster from your current text.
-                      </p>
+                  </div>
+
+                  {/* Direct Fine-Tuning Controls Accordion */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 grid gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Sliders className="size-3.5 text-purple-600" />
+                        Poster Fine-Tuning (Live Sub-100ms Preview)
+                      </span>
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          if (content.trim()) setCampaignPrompt(content.slice(0, 80))
-                          handleGenerateUnifiedCampaign()
-                        }}
-                        disabled={generatingCampaign}
-                        className="text-xs text-purple-700 border-purple-300 hover:bg-purple-50"
+                        className="h-6 px-2 text-xs text-slate-500 hover:text-slate-800"
+                        onClick={() => setIsFineTuningOpen(!isFineTuningOpen)}
                       >
-                        <Sparkles className="size-3.5 mr-1.5" />
-                        Generate Poster for Current Post
+                        {isFineTuningOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
                       </Button>
                     </div>
-                  )}
+
+                    {isFineTuningOpen && (
+                      <div className="grid gap-3 pt-1 border-t border-slate-200/60 animate-in fade-in duration-150">
+                        {/* Headline */}
+                        <div className="grid gap-1">
+                          <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                            <Label htmlFor="fine-headline" className="text-[11px]">Poster Headline</Label>
+                            <span>{editableHeadline.length} chars</span>
+                          </div>
+                          <Input
+                            id="fine-headline"
+                            value={editableHeadline}
+                            onChange={(e) => {
+                              setEditableHeadline(e.target.value)
+                              triggerLiveReRender({ headline: e.target.value })
+                            }}
+                            placeholder="Punchy visual headline..."
+                            className="h-8 text-xs bg-white"
+                          />
+                        </div>
+
+                        {/* Subheadline & Badge */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="grid gap-1">
+                            <Label htmlFor="fine-sub" className="text-[11px] font-medium text-slate-600">Subheadline / Context</Label>
+                            <Input
+                              id="fine-sub"
+                              value={editableSubheadline}
+                              onChange={(e) => {
+                                setEditableSubheadline(e.target.value)
+                                triggerLiveReRender({ subheadline: e.target.value })
+                              }}
+                              placeholder="Subtitle or takeaway..."
+                              className="h-8 text-xs bg-white"
+                            />
+                          </div>
+                          <div className="grid gap-1">
+                            <Label htmlFor="fine-badge" className="text-[11px] font-medium text-slate-600">Category Badge</Label>
+                            <Input
+                              id="fine-badge"
+                              value={editableBadge}
+                              onChange={(e) => {
+                                setEditableBadge(e.target.value)
+                                triggerLiveReRender({ badge: e.target.value })
+                              }}
+                              placeholder="e.g. PRO TIP, CHEAT SHEET"
+                              className="h-8 text-xs bg-white"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Stat Number (If metric-callout) */}
+                        {currentArchetype === "metric-callout" && (
+                          <div className="grid gap-1">
+                            <Label htmlFor="fine-stat" className="text-[11px] font-medium text-slate-600">Hero Stat Number</Label>
+                            <Input
+                              id="fine-stat"
+                              value={editableStat}
+                              onChange={(e) => {
+                                setEditableStat(e.target.value)
+                                triggerLiveReRender({ stat: e.target.value })
+                              }}
+                              placeholder="e.g. +4.5X or 85%"
+                              className="h-8 text-xs bg-white"
+                            />
+                          </div>
+                        )}
+
+                        {/* CTA Text (If promo-banner or editorial-hero) */}
+                        {(currentArchetype === "promo-banner" || currentArchetype === "editorial-hero") && (
+                          <div className="grid gap-1">
+                            <Label htmlFor="fine-cta" className="text-[11px] font-medium text-slate-600">CTA Button Text</Label>
+                            <Input
+                              id="fine-cta"
+                              value={editableCta}
+                              onChange={(e) => {
+                                setEditableCta(e.target.value)
+                                triggerLiveReRender({ cta: e.target.value })
+                              }}
+                              placeholder="e.g. GET 50% OFF NOW →"
+                              className="h-8 text-xs bg-white"
+                            />
+                          </div>
+                        )}
+
+                        {/* 1-Click Photo Swapper Strip */}
+                        {imageCandidates.length > 0 && (
+                          <div className="grid gap-1.5 pt-1">
+                            <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                              <span>1-Click Stock Photography Swapper</span>
+                              <span>{imageCandidates.length} Photos Found</span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-2">
+                              {imageCandidates.map((url, i) => {
+                                const isCurrent = currentImageUrl === url
+                                return (
+                                  <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => {
+                                      setCurrentImageUrl(url)
+                                      triggerLiveReRender({ imageUrl: url })
+                                    }}
+                                    className={cn(
+                                      "relative h-14 rounded-md overflow-hidden border transition-all group",
+                                      isCurrent
+                                        ? "ring-2 ring-purple-600 border-purple-600 shadow-xs"
+                                        : "border-slate-300 hover:border-slate-400 opacity-80 hover:opacity-100"
+                                    )}
+                                  >
+                                    <img src={url} alt={`Option ${i + 1}`} className="size-full object-cover" />
+                                    {isCurrent && (
+                                      <div className="absolute inset-0 bg-purple-600/30 flex items-center justify-center">
+                                        <Check className="size-4 text-white drop-shadow-xs" />
+                                      </div>
+                                    )}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Color Palette Quick Selector */}
+                        <div className="grid gap-1.5 pt-1">
+                          <Label className="text-[11px] font-medium text-slate-600">Brand Color Mood</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { id: "midnight-mint", label: "Midnight Mint", color: "#2DD4BF" },
+                              { id: "ink-sun", label: "Ink & Sun", color: "#F8C630" },
+                              { id: "paper-tomato", label: "Paper Tomato", color: "#E63946" },
+                              { id: "forest-lime", label: "Forest Lime", color: "#D9ED92" },
+                              { id: "plum-gold", label: "Plum & Gold", color: "#D4AF37" },
+                            ].map((pal) => (
+                              <button
+                                key={pal.id}
+                                type="button"
+                                onClick={() => {
+                                  setPaletteId(pal.id)
+                                  triggerLiveReRender({ palette: pal.id })
+                                }}
+                                className={cn(
+                                  "flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] border transition-all font-medium",
+                                  paletteId === pal.id
+                                    ? "bg-white border-purple-600 text-purple-900 shadow-xs font-semibold"
+                                    : "bg-white/80 border-slate-200 text-slate-700 hover:bg-white"
+                                )}
+                              >
+                                <span className="size-2.5 rounded-full" style={{ backgroundColor: pal.color }} />
+                                {pal.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Aspect Ratio Live Transform */}
+                        <div className="grid gap-1.5 pt-1">
+                          <Label className="text-[11px] font-medium text-slate-600">Canvas Ratio (1-Click Reformat)</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { id: "1:1", label: "1:1 Square (1080×1080)" },
+                              { id: "4:5", label: "4:5 Feed Portrait (1080×1350)" },
+                              { id: "9:16", label: "9:16 Story / Reel (1080×1920)" },
+                              { id: "16:9", label: "16:9 Banner (1920×1080)" },
+                            ].map((r) => (
+                              <button
+                                key={r.id}
+                                type="button"
+                                onClick={() => {
+                                  setAspectRatio(r.id as any)
+                                  triggerLiveReRender({ aspectRatio: r.id as any })
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-md text-[11px] border transition-all font-medium",
+                                  aspectRatio === r.id
+                                    ? "bg-purple-600 text-white border-purple-600 font-semibold shadow-xs"
+                                    : "bg-white/80 border-slate-200 text-slate-700 hover:bg-white"
+                                )}
+                              >
+                                {r.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1028,6 +1546,8 @@ export function Composer({
           </div>
         </div>
       </div>
+      </>
+    )}
 
       {/* --- Interactive Canvas Workbench Modal --- */}
       {isCanvasModalOpen && (
