@@ -106,5 +106,32 @@
       "subheading": { "x": 50, "y": 84 },
       "logo": { "x": 86, "y": 88 }
     }
+  },
+  {
+    "id": "stat-metric-callout",
+    "name": "Stat / Metric Callout",
+    "anchors": {
+      "heading": { "x": 12, "y": 28 },
+      "subheading": { "x": 12, "y": 62 },
+      "logo": { "x": 86, "y": 88 }
+    }
+  },
+  {
+    "id": "editorial-quote-card",
+    "name": "Editorial Quote Card",
+    "anchors": {
+      "heading": { "x": 12, "y": 40 },
+      "subheading": { "x": 12, "y": 78 },
+      "logo": { "x": 12, "y": 90 }
+    }
+  },
+  {
+    "id": "minimal-takeaway-card",
+    "name": "Minimal Takeaway Card",
+    "anchors": {
+      "heading": { "x": 12, "y": 24 },
+      "subheading": { "x": 12, "y": 55 },
+      "logo": { "x": 12, "y": 88 }
+    }
   }
 ]

@@ -1,7 +1,7 @@
 "use client"
 
 import { useApp } from "@/contexts/app-context"
-import { StyleAnalyzerView } from "@/components/social-platform"
+import { StyleAnalyzerView } from "@/components/dashboard/views/style-analyzer-view"
 import { Loader2 } from "lucide-react"
 
 export default function StyleAnalyzerPage() {

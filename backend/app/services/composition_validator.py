@@ -162,98 +162,151 @@ def _rect_overlap(r1, r2):
                 r1["y"] >= r2["y"] + r2["h"] or 
                 r1["y"] + r1["h"] <= r2["y"])
 
+
+def _calculate_text_metrics(text: str, font_name: str, font_size: int, max_width: float) -> tuple[float, float]:
+    """Calculate approximate (total_height, max_line_width) for text given font_size and max_width."""
+    if not text or font_size <= 0:
+        return (0.0, 0.0)
+
+    avg_char_w = max(1.0, font_size * 0.52)
+    chars_per_line = max(1, int(max_width / avg_char_w)) if max_width > 0 else len(text)
+
+    paragraphs = text.split("\n")
+    all_lines = []
+    for p in paragraphs:
+        if not p.strip():
+            all_lines.append("")
+        else:
+            words = p.split()
+            current_line = []
+            current_len = 0
+            for word in words:
+                word_len = len(word)
+                if current_len + word_len + (1 if current_line else 0) <= chars_per_line:
+                    current_line.append(word)
+                    current_len += word_len + (1 if len(current_line) > 1 else 0)
+                else:
+                    if current_line:
+                        all_lines.append(" ".join(current_line))
+                    current_line = [word]
+                    current_len = word_len
+            if current_line:
+                all_lines.append(" ".join(current_line))
+
+    line_height = font_size * 1.25
+    total_height = max(1, len(all_lines)) * line_height
+    max_line_w = max((len(line) * avg_char_w for line in all_lines), default=0.0)
+    return (total_height, max_line_w)
+
+
+def _truncate_text_to_fit(text: str, font_name: str, font_size: int, max_w: float, max_h: float) -> str:
+    """Truncates text with ellipsis if it overflows slot dimensions at minimum font size."""
+    if not text:
+        return text
+    words = text.split()
+    while words:
+        candidate = " ".join(words) + "..."
+        tot_h, line_w = _calculate_text_metrics(candidate, font_name, font_size, max_w)
+        if tot_h <= max_h and line_w <= max_w:
+            return candidate
+        words.pop()
+    return text[:10] + "..." if len(text) > 10 else text
+
+
+def run_expand_to_fill_text_sizing(elements: List[Dict], max_headline_size: int = 140, min_size: int = 14):
+    """
+    P1: Binary-search dynamic text scaling that optimizes font size
+    to legibly fill the available slot width/height while strictly preserving margins.
+    """
+    for el in elements:
+        if el.get("type") == "text":
+            text = str(el.get("content") or "").strip()
+            if not text:
+                continue
+            w = float(el.get("w", 0))
+            h = float(el.get("h", 0))
+            if w <= 0 or h <= 0:
+                continue
+
+            font_name = el.get("font_name", "arial")
+            role = el.get("role", "body")
+            
+            # Target max font size depends on the role
+            if role == "headline":
+                target_max = max_headline_size
+            elif role == "subheadline":
+                target_max = int(max_headline_size * 0.6)
+            else:
+                target_max = int(max_headline_size * 0.4)
+
+            # Binary search for optimal font size that fits into bounding box (w, h)
+            low = min_size
+            high = target_max
+            best_size = low
+
+            while low <= high:
+                mid = (low + high) // 2
+                total_height, max_line_w = _calculate_text_metrics(text, font_name, mid, w)
+                if total_height <= h and max_line_w <= w:
+                    best_size = mid
+                    low = mid + 1 # try larger
+                else:
+                    high = mid - 1 # try smaller
+
+            # If user or LLM specified a size, we only scale if not set or if it overflows
+            current_font_size = el.get("font_size")
+            if not current_font_size:
+                el["font_size"] = best_size
+            else:
+                # If current size overflows, shrink to best_size
+                tot_h, line_w = _calculate_text_metrics(text, font_name, current_font_size, w)
+                if tot_h > h or line_w > w:
+                    el["font_size"] = best_size
+                else:
+                    # If it's a headline and significantly undersized, expand to fill
+                    if role == "headline" and current_font_size < best_size * 0.8:
+                        el["font_size"] = best_size
+
 def run_overlap_check(elements: List[Dict]):
+    """
+    P4: Selective Intentional Overlap.
+    Allows badges, stickers, and accent icons with `allow_overlap=True` or
+    corner badge slots to intentionally break boundaries for modern editorial designs,
+    while resolving unintended text-on-text collisions.
+    """
     # Sort elements by priority (text is high priority, icons/shapes are lower)
-    # So we nudge icons/shapes first
     def get_priority(el):
         t = el.get("type", "shape")
         if t == "text": return 2
         if t == "logo": return 1
         return 0 # shape/icon
         
-    elements.sort(key=get_priority, reverse=True)
+    sorted_elements = sorted(elements, key=get_priority, reverse=True)
     
-    for i in range(len(elements)):
-        for j in range(i + 1, len(elements)):
-            el1, el2 = elements[i], elements[j]
-            if _rect_overlap(el1, el2):
-                # el2 is lower priority, nudge it down
-                nudge_amount = (el1["y"] + el1["h"]) - el2["y"] + 10
-                el2["y"] += nudge_amount
-                
-try:
-    from app.services.poster_renderer import get_font_path
-except ImportError:
-    from backend.app.services.poster_renderer import get_font_path
+    for i in range(len(sorted_elements)):
+        for j in range(i + 1, len(sorted_elements)):
+            el1, el2 = sorted_elements[i], sorted_elements[j]
 
-def _calculate_text_metrics(text: str, font_name: str, font_size: int, max_w: float):
-    font = get_font_path(font_name, font_size)
-    words = text.split()
-    if not words:
-        return 0.0, 0.0
-    
-    def get_str_width(s: str) -> float:
-        try:
-            return font.getlength(s)
-        except Exception:
-            bbox = font.getbbox(s)
-            return float(bbox[2] - bbox[0]) if bbox else len(s) * (font_size * 0.6)
+            # P4: Allow intentional overlap if flagged or if corner badge/accent
+            if el1.get("allow_overlap") or el2.get("allow_overlap"):
+                continue
+            if el1.get("slot") in ("corner_badge", "accent_icon") or el2.get("slot") in ("corner_badge", "accent_icon"):
+                continue
+            if el1.get("role") in ("corner_badge", "accent_icon") or el2.get("role") in ("corner_badge", "accent_icon"):
+                continue
 
-    space_w = get_str_width(" ")
-    
-    lines = 1
-    current_line_w = 0.0
-    max_line_w = 0.0
-    for word in words:
-        word_w = get_str_width(word)
-        if current_line_w + word_w > max_w and current_line_w > 0:
-            lines += 1
-            max_line_w = max(max_line_w, current_line_w)
-            current_line_w = word_w
-        else:
-            if current_line_w > 0:
-                current_line_w += space_w + word_w
-            else:
-                current_line_w = word_w
-    max_line_w = max(max_line_w, current_line_w)
-
-    try:
-        ascent, descent = font.getmetrics()
-        line_height = float(ascent + descent)
-    except Exception:
-        line_height = 0.0
-        
-    if line_height <= 0:
-        line_height = font_size * 1.2
-
-    return lines * line_height, max_line_w
-
-def _truncate_text_to_fit(text: str, font_name: str, font_size: int, max_w: float, max_h: float) -> str:
-    words = text.split()
-    if not words:
-        return text
-
-    # Word-level truncation
-    for i in range(len(words) - 1, -1, -1):
-        test_text = " ".join(words[:i+1]) + "..."
-        h, w = _calculate_text_metrics(test_text, font_name, font_size, max_w)
-        if h <= max_h and w <= max_w:
-            return test_text
-            
-    # Character-level truncation on the first word
-    first_word = words[0]
-    for i in range(len(first_word) - 1, 0, -1):
-        test_text = first_word[:i] + "..."
-        h, w = _calculate_text_metrics(test_text, font_name, font_size, max_w)
-        if h <= max_h and w <= max_w:
-            return test_text
-            
-    return "..."
+            # Only nudge if both are text elements colliding directly
+            if el1.get("type") == "text" and el2.get("type") == "text":
+                if _rect_overlap(el1, el2):
+                    nudge_amount = (el1["y"] + el1["h"]) - el2["y"] + 8
+                    el2["y"] += nudge_amount
 
 def run_text_fit_check(elements: List[Dict]):
     for el in elements:
         if el.get("type") == "text":
-            text = el.get("content", "")
+            text = str(el.get("content") or "").strip()
+            if not text:
+                continue
             w, h = el.get("w", 0), el.get("h", 0)
             font_size = el.get("font_size", 40)
             font_name = el.get("font_name", "arial")
@@ -282,14 +335,30 @@ def validate_and_fix_composition(
     palette: dict | None = None,
 ) -> float:
     """
-    Runs deterministic checks and applies auto-fixes in place.
-    Returns the updated overlay_opacity.
+    Art Director Composition Intelligence:
+    1. Safe Zone Enforcment (5% margin)
+    2. P1: Expand-to-Fill Dynamic Text Sizing (binary search fitting)
+    3. P4: Overlap verification with intentional overlap support
+    4. P2: WCAG 2.1 AA Color Harmony contrast verification
     """
-    overlay_opacity = run_contrast_check(elements, background_color, overlay_opacity, overlay_color, palette=palette)
-    run_safe_zone_check(elements, canvas_w, canvas_h)
+    # 1. Expand to fill and fit check
+    run_expand_to_fill_text_sizing(elements)
     run_text_fit_check(elements)
+
+    # 2. Overlap checks
     run_overlap_check(elements)
-    # Check safe zone again after nudge
+
+    # 3. Safe zone margins
     run_safe_zone_check(elements, canvas_w, canvas_h)
-    
-    return overlay_opacity
+
+    # 4. Color harmony & contrast checking
+    final_opacity = run_contrast_check(
+        elements=elements,
+        background_color=background_color,
+        overlay_opacity=overlay_opacity,
+        overlay_color=overlay_color,
+        palette=palette,
+    )
+
+    return final_opacity
+

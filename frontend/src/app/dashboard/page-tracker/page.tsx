@@ -1,7 +1,7 @@
 "use client"
 
 import { useApp } from "@/contexts/app-context"
-import { PageTrackerView } from "@/components/social-platform"
+import { PageTrackerView } from "@/components/dashboard/views/page-tracker-view"
 import { Loader2 } from "lucide-react"
 
 export default function PageTrackerPage() {

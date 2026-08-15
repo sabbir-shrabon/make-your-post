@@ -2,7 +2,7 @@
 
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { ScheduledSlotsView } from "@/components/social-platform"
+import { ScheduledSlotsView } from "@/components/dashboard/views/scheduled-slots-view"
 import { Loader2 } from "lucide-react"
 
 export default function ScheduledPage() {

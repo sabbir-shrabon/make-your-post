@@ -2,7 +2,7 @@
 
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { PostList } from "@/components/social-platform"
+import { PostList } from "@/components/dashboard/views/post-list-view"
 import { Loader2 } from "lucide-react"
 
 export default function PublishedPostsPage() {

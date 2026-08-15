@@ -434,7 +434,7 @@ class TextTemplateLayer(TemplateLayerBase):
     font_size_min_percent: float = Field(gt=0)
     font_size_max_percent: float = Field(gt=0)
     text_align_options: list[Literal["left", "center", "right"]] = Field(min_length=1)
-    font_weight: Literal["bold", "regular"]
+    font_weight: Literal["bold", "regular", "normal"]
 
 
 class OverlayTemplateLayer(TemplateLayerBase):

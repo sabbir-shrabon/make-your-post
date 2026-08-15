@@ -183,14 +183,18 @@ def _generate_mistral(
     if response_format:
         payload["response_format"] = response_format
 
-    response = httpx.post(
-        f"{MISTRAL_API_BASE_URL.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {effective_key}"},
-        json=payload,
-        timeout=45,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"Mistral request failed ({response.status_code}): {response.text[:200]}")
+    try:
+        response = httpx.post(
+            f"{MISTRAL_API_BASE_URL.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {effective_key}"},
+            json=payload,
+            timeout=45,
+        )
+        response.raise_for_status()
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"Mistral API connection error: {exc}")
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"Mistral request failed ({exc.response.status_code}): {exc.response.text[:200]}")
 
     data = response.json()
     
@@ -520,18 +524,22 @@ def _generate_openrouter(
     if response_format:
         payload["response_format"] = response_format
 
-    response = httpx.post(
-        f"{OPENROUTER_API_BASE_URL.rstrip('/')}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {effective_key}",
-            "HTTP-Referer": FRONTEND_URL,
-            "X-Title": "AutoPoster AI",
-        },
-        json=payload,
-        timeout=60,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"OpenRouter request failed ({response.status_code}): {response.text[:200]}")
+    try:
+        response = httpx.post(
+            f"{OPENROUTER_API_BASE_URL.rstrip('/')}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {effective_key}",
+                "HTTP-Referer": FRONTEND_URL,
+                "X-Title": "AutoPoster AI",
+            },
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+    except httpx.RequestError as exc:
+        raise RuntimeError(f"OpenRouter API connection error: {exc}")
+    except httpx.HTTPStatusError as exc:
+        raise RuntimeError(f"OpenRouter request failed ({exc.response.status_code}): {exc.response.text[:200]}")
 
     data = response.json()
     choice = data.get("choices", [{}])[0]

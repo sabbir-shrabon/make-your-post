@@ -23,7 +23,15 @@ class BrandProfileUpsert(BaseModel):
     secondary_color_hex: str | None = None
     tone: str | None = None
     logo_url: str | None = None
+    palette_id: str | None = None
+    font_pair_id: str | None = None
+    niche_description: str | None = None
     brand_json: dict = Field(default_factory=dict)
+
+
+class AutoExtractBrandRequest(BaseModel):
+    page_connection_id: int | None = None
+    logo_url: str | None = None
 
 
 class ContentPlanRequest(BaseModel):
@@ -45,13 +53,17 @@ def get_brand_profile(
     row = db.query(models.BrandProfile).filter(models.BrandProfile.user_id == current_user.id).first()
     if not row:
         return {}
+    b_json = row.brand_json or {}
     return {
         "brand_name": row.brand_name,
         "primary_color_hex": row.primary_color_hex,
         "secondary_color_hex": row.secondary_color_hex,
         "tone": row.tone,
         "logo_url": row.logo_url,
-        "brand_json": row.brand_json,
+        "palette_id": b_json.get("palette_id"),
+        "font_pair_id": b_json.get("font_pair_id"),
+        "niche_description": b_json.get("niche_description"),
+        "brand_json": b_json,
         "updated_at": row.updated_at,
     }
 
@@ -75,10 +87,102 @@ def upsert_brand_profile(
     row.secondary_color_hex = payload.secondary_color_hex
     row.tone = payload.tone
     row.logo_url = payload.logo_url
-    row.brand_json = payload.brand_json or {}
+
+    b_json = payload.brand_json or {}
+    if payload.palette_id:
+        b_json["palette_id"] = payload.palette_id
+    if payload.font_pair_id:
+        b_json["font_pair_id"] = payload.font_pair_id
+    if payload.niche_description:
+        b_json["niche_description"] = payload.niche_description
+
+    row.brand_json = b_json
     row.updated_at = datetime.now(timezone.utc)
     db.commit()
-    return {"success": True}
+    return {
+        "success": True,
+        "brand_profile": {
+            "brand_name": row.brand_name,
+            "primary_color_hex": row.primary_color_hex,
+            "secondary_color_hex": row.secondary_color_hex,
+            "tone": row.tone,
+            "logo_url": row.logo_url,
+            "palette_id": b_json.get("palette_id"),
+            "font_pair_id": b_json.get("font_pair_id"),
+            "niche_description": b_json.get("niche_description"),
+        },
+    }
+
+
+@router.post("/api/brand/auto-extract")
+def auto_extract_brand_kit(
+    payload: AutoExtractBrandRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    page = None
+    if payload.page_connection_id:
+        page = db.query(models.FacebookConnection).filter(
+            models.FacebookConnection.id == payload.page_connection_id,
+            models.FacebookConnection.user_id == current_user.id,
+        ).first()
+
+    logo_url = payload.logo_url or (page.page_picture_url if page else None)
+    brand_name = page.page_name if page else "My Brand"
+
+    primary_color = "#1877F2"
+    secondary_color = "#42B72A"
+    palette_id = "ink-sun"
+    font_pair_id = "space-grotesk-dm-sans"
+    tone = "Authoritative, Inspiring, High-Converting"
+
+    persona = None
+    if page:
+        persona = db.query(models.AIPersona).filter(
+            models.AIPersona.page_connection_id == page.id
+        ).first()
+        if persona:
+            if persona.brand_palette_id:
+                palette_id = persona.brand_palette_id
+            if persona.brand_font_pair_id:
+                font_pair_id = persona.brand_font_pair_id
+            if persona.tone_tags:
+                tone = persona.tone_tags
+
+    row = db.query(models.BrandProfile).filter(models.BrandProfile.user_id == current_user.id).first()
+    if not row:
+        row = models.BrandProfile(
+            user_id=current_user.id,
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+
+    row.brand_name = brand_name
+    row.logo_url = logo_url
+    row.primary_color_hex = primary_color
+    row.secondary_color_hex = secondary_color
+    row.tone = tone
+
+    b_json = row.brand_json or {}
+    b_json["palette_id"] = palette_id
+    b_json["font_pair_id"] = font_pair_id
+    if persona and persona.niche:
+        b_json["niche_description"] = persona.niche
+    row.brand_json = b_json
+    row.updated_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "success": True,
+        "brand_name": brand_name,
+        "logo_url": logo_url,
+        "primary_color_hex": primary_color,
+        "secondary_color_hex": secondary_color,
+        "tone": tone,
+        "palette_id": palette_id,
+        "font_pair_id": font_pair_id,
+        "niche_description": b_json.get("niche_description", ""),
+    }
 
 
 @router.get("/api/brand/dna")

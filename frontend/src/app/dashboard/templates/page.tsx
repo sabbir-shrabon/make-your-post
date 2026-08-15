@@ -1,7 +1,7 @@
 "use client"
 
 import { useApp } from "@/contexts/app-context"
-import { TemplateLibraryView } from "@/components/social-platform"
+import { TemplateLibraryView } from "@/components/dashboard/views/template-library-view"
 import { Loader2 } from "lucide-react"
 
 export default function TemplatesPage() {

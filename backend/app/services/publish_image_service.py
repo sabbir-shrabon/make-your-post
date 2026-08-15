@@ -120,6 +120,17 @@ async def maybe_generate_image_for_post(
     if post_log.media_library_id:
         return None
 
+    # Poster Lab Generation flow
+    if persona.image_prompt_source == "poster_lab":
+        success = await _generate_poster_for_post(db, persona, post_log)
+        if success:
+            return None
+        if persona.image_fallback_policy == "skip_post":
+            return "poster_generation_failed"
+        if persona.image_fallback_policy == "use_library":
+            _attach_library_image(db, persona, post_log)
+            return None
+
     image_prompt = _resolve_image_prompt(db, persona, post_log)
     if not image_prompt:
         if persona.image_prompt_source == "library_image":
@@ -233,3 +244,58 @@ def _resolve_image_prompt(
         return image_prompt.strip() if image_prompt else None
 
     return None
+
+
+async def _generate_poster_for_post(
+    db: Session,
+    persona: models.AIPersona,
+    post_log: models.PostLog,
+) -> bool:
+    """Renders a brand-aligned graphic poster via the Art Director pipeline and attaches it to the post."""
+    import base64
+    from app.services.poster_orchestrator import generatePoster
+    from app.routers.images import async_upload_to_supabase
+
+    topic = post_log.topic or (post_log.content[:120] if post_log.content else "Social Post")
+    try:
+        poster_result = await generatePoster(
+            topic=topic,
+            persona_id=persona.id,
+            db=db,
+            user_id=persona.user_id,
+            candidate_count=1,
+            allow_pexels_bg=True,
+            brand_palette_id=persona.brand_palette_id,
+            brand_font_pair_id=persona.brand_font_pair_id,
+        )
+        base64_data = poster_result.get("base64_image")
+        if not base64_data:
+            return False
+
+        if base64_data.startswith("data:image"):
+            base64_data = base64_data.split(",", 1)[1]
+
+        img_bytes = base64.b64decode(base64_data)
+        job_id_str = str(uuid.uuid4())
+        filename = f"{persona.user_id}/poster_{job_id_str}.png"
+        pub_url = await async_upload_to_supabase(filename, img_bytes)
+
+        media = models.MediaLibrary(
+            user_id=persona.user_id,
+            persona_id=persona.id,
+            image_url=pub_url,
+            storage_path=filename,
+            generation_prompt=f"Poster Lab: {topic}",
+            provider="poster_lab",
+            model_name="art_director",
+        )
+        db.add(media)
+        db.flush()
+        post_log.media_library_id = str(media.id)
+        post_log.image_url = pub_url
+        print(f"Poster Lab image generation for persona {persona.persona_name}: success")
+        return True
+    except Exception as exc:
+        print(f"Poster Lab image generation for persona {persona.persona_name} failed: {exc}")
+        return False
+

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 from typing import Literal, Optional
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def resolve_resource(
     user_id: Optional[int] = None,
     db=None,  # SQLAlchemy Session — required for library_image / background_asset
     allow_fallback: bool = True,
+    allow_cat_bg: bool = True,
+    allow_pexels_bg: bool = False,
 ) -> dict:
     """
     Unified asset resolver. Dispatches to the correct strategy based on type.
@@ -53,8 +56,9 @@ def resolve_resource(
     scope        : override for library scope; auto-derived from type when omitted
     persona_id   : optional – used for future persona-scoped library filtering
     user_id      : required for library queries (scopes results to owner)
-    db           : SQLAlchemy Session (required for library types)
+    db           : SQLAlchemy Session (required for library queries)
     allow_fallback: if True, allows icon resolution to fallback to generic names
+    allow_cat_bg : if False, instantly fails resolution of cat_photo elements.
 
     Returns
     -------
@@ -76,7 +80,12 @@ def resolve_resource(
             _resolve_emoji(description, result)
 
         elif asset_type == "cat_photo":
-            _resolve_cat_photo(description, result)
+            if allow_cat_bg:
+                _resolve_cat_photo(description, result)
+            else:
+                logger.info("resolve_resource: cat_photo requested but allow_cat_bg is False. Skipping.")
+                result["resolved"] = None
+                result["low_confidence"] = True
 
         elif asset_type == "shape":
             _resolve_shape(description, result)
@@ -88,6 +97,13 @@ def resolve_resource(
                 else ("media_library" if asset_type == "library_image" else "backgrounds")
             )
             _resolve_library(description, effective_scope, user_id, db, result)
+
+        elif asset_type == "photo":
+            if allow_pexels_bg:
+                _resolve_photo(description, result)
+            else:
+                result["resolved"] = None
+                result["low_confidence"] = True
 
         else:
             logger.info("resolve_resource: unknown type '%s', defaulting resolved to description", asset_type)
@@ -106,17 +122,82 @@ def resolve_resource(
 
 
 
+def resolve_background_photo(
+    *,
+    query: str,
+    canvas_w: int,
+    canvas_h: int,
+    run_id: str = "",
+    allow_pexels_bg: bool = False,
+    allow_cat_bg: bool = False,
+) -> tuple[Image.Image | None, dict]:
+    """Resolve a photo background with hard source gates and fallback diagnostics."""
+    diagnostics = {
+        "requested": True,
+        "query": query,
+        "allow_pexels_bg": allow_pexels_bg,
+        "allow_cat_bg": allow_cat_bg,
+        "sources_called": [],
+        "resolved_source": None,
+        "override_reason": None,
+    }
+
+    if not allow_pexels_bg and not allow_cat_bg:
+        diagnostics["override_reason"] = "photo_background_disallowed"
+        logger.warning(
+            "[run=%s] Photo background requested while all photo sources are disabled; using fallback_type.",
+            run_id,
+        )
+        return None, diagnostics
+
+    if allow_pexels_bg:
+        diagnostics["sources_called"].append("pexels")
+        from app.services.photo_background import fetch_photo_background
+
+        image = fetch_photo_background(
+            pexels_query=query,
+            canvas_w=canvas_w,
+            canvas_h=canvas_h,
+            run_id=run_id,
+        )
+        if image is not None:
+            diagnostics["resolved_source"] = "pexels"
+            return image, diagnostics
+
+    if allow_cat_bg:
+        diagnostics["sources_called"].append("cat_api")
+        image = _fetch_cat_background(query, canvas_w, canvas_h, run_id)
+        if image is not None:
+            diagnostics["resolved_source"] = "cat_api"
+            return image, diagnostics
+
+    diagnostics["override_reason"] = "photo_sources_returned_no_results"
+    return None, diagnostics
 # ---------------------------------------------------------------------------
 # Private dispatchers
 # ---------------------------------------------------------------------------
 
+
 def _resolve_icon(description: str, result: dict, allow_fallback: bool = True) -> None:
     from app.services.resource_resolver import resolve_icon  # Task A
 
-    icon_id = resolve_icon(description, allow_fallback=allow_fallback)
+    icon_id, candidates = resolve_icon(description, allow_fallback=allow_fallback)
     result["resolved"] = icon_id
+    result["candidates"] = [{"url": c} for c in candidates]
     result["low_confidence"] = icon_id is None
     logger.info("Icon resolved: '%s' → %s", description, icon_id)
+
+def _resolve_photo(description: str, result: dict) -> None:
+    from app.services.photo_background import _search_pexels_multiple
+    
+    urls = _search_pexels_multiple(description)
+    if urls:
+        result["resolved"] = urls[0]
+        result["candidates"] = [{"url": u} for u in urls]
+        result["low_confidence"] = False
+    else:
+        result["resolved"] = None
+        result["low_confidence"] = True
 
 
 def _resolve_emoji(description: str, result: dict) -> None:
@@ -153,6 +234,21 @@ def _resolve_cat_photo(description: str, result: dict) -> None:
         description, result["resolved"], result["low_confidence"],
     )
 
+
+def _fetch_cat_background(query: str, canvas_w: int, canvas_h: int, run_id: str) -> Image.Image | None:
+    from app.services.cat_photo_resolver import resolve_cat_photo
+    from app.services.poster_renderer import render_image_layer
+
+    try:
+        cat_result = resolve_cat_photo(query)
+        url = cat_result.get("url")
+        if not url:
+            logger.warning("[run=%s] Cat API returned no background URL for %r", run_id, query)
+            return None
+        return render_image_layer({"type": "cat_photo", "resolved": url}, canvas_w, canvas_h)
+    except Exception as exc:
+        logger.warning("[run=%s] Cat API background failed for %r: %s", run_id, query, exc)
+        return None
 
 def _resolve_library(
     description: str,

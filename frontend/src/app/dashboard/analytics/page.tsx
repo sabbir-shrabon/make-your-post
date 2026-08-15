@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { AnalyticsView } from "@/components/social-platform"
+import { AnalyticsView } from "@/components/dashboard/views/analytics-view"
 import { Loader2 } from "lucide-react"
 import { api } from "@/lib/api"
 

@@ -2,7 +2,7 @@
 
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { SettingsView } from "@/components/social-platform"
+import { SettingsView } from "@/components/dashboard/views/settings-view"
 import { Loader2 } from "lucide-react"
 
 export default function SettingsPage() {

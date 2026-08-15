@@ -115,16 +115,50 @@ def _generate_single_candidate(
     db: Session,
     candidate_index: int,
     temperature: float = 0.7,
+    allow_pexels_bg: bool = False,
+    allow_cat_bg: bool = False,
+    headline_hint: str | None = None,
+    subheadline_hint: str | None = None,
+    badge_hint: str | None = None,
+    visual_asset_query: str | None = None,
+    mood_hint: str | None = None,
 ) -> dict:
     run_id = str(uuid.uuid4())
     logger.info("[run=%s][Candidate #%d] Running AI Art Director (temp=%.2f)...", run_id, candidate_index, temperature)
-    ad_output = run_art_director(
-        topic=topic,
-        brand_palette_id=brand_palette_id,
-        brand_font_pair_id=brand_font_pair_id,
-        user_id=user_id,
-        db=db,
-    )
+    try:
+        ad_output = run_art_director(
+            topic=topic,
+            brand_palette_id=brand_palette_id,
+            brand_font_pair_id=brand_font_pair_id,
+            user_id=user_id,
+            db=db,
+            mood_hint=mood_hint,
+            allow_pexels_bg=allow_pexels_bg,
+            allow_cat_bg=allow_cat_bg,
+            headline_hint=headline_hint,
+            subheadline_hint=subheadline_hint,
+            badge_hint=badge_hint,
+            visual_asset_query=visual_asset_query,
+        )
+    except Exception as exc:
+        logger.error("[run=%s][Candidate #%d] Art Director failed: %s", run_id, candidate_index, exc)
+        return {
+            "run_id": run_id,
+            "candidate_index": candidate_index,
+            "composite_score": 0.0,
+            "aesthetic_score": 0.0,
+            "critic_status": "fail",
+            "art_director": {},
+            "resolved_assets": [],
+            "final_opacity": 0.0,
+            "vision_critic": {"status": "fail"},
+            "original_vision_critic": {"status": "fail"},
+            "fixed_vision_critic": None,
+            "base64_image": None,
+            "output_path": None,
+        }
+
+    background_choice_dict = None
 
     resolved_asset_refs: list[dict] = []
     for elem in ad_output.elements:
@@ -133,8 +167,9 @@ def _generate_single_candidate(
             description=elem.description,
             user_id=user_id,
             db=db,
+            allow_cat_bg=allow_cat_bg,
         )
-        if asset_ref["resolved"] is None:
+        if asset_ref["resolved"] is None and elem.type in ["icon", "emoji", "cat_photo", "photo"]:
             logger.info("[run=%s] Dropping unresolved element: type=%s desc=%r", run_id, elem.type, elem.description)
             continue
         resolved_asset_refs.append({
@@ -143,62 +178,35 @@ def _generate_single_candidate(
         })
 
     canvas_w, canvas_h = 1080, 1080
-    overlay_opacity = 0.4 if ad_output.use_contrast_overlay else 0.0
+    overlay_opacity = 0.0
     palette = next((p for p in PALETTES if p["id"] == ad_output.palette_id), PALETTES[0])
-    background_color = palette.get("background", {}).get("hex", "#121212")
-    text_color = palette.get("text_on_dark", "#FFFFFF")
+    background_color = ad_output.background_color
     
-    slots = resolve_template_slots(ad_output.template_id, canvas_w, canvas_h)
+    template_slots = resolve_template_slots(ad_output.template_id, canvas_w, canvas_h)
     validation_elements = []
-    
-    if "headline" in slots:
-        slot = slots["headline"]
-        validation_elements.append({
-            "type": "text", "role": "headline", "content": ad_output.headline,
-            "x": slot["x"], "y": slot["y"], "w": slot["w"], "h": slot["h"],
-            "font_size": 60, "color": text_color
-        })
-        
-    if "subheadline" in slots:
-        slot = slots["subheadline"]
-        validation_elements.append({
-            "type": "text", "role": "subheadline", "content": ad_output.subheadline,
-            "x": slot["x"], "y": slot["y"], "w": slot["w"], "h": slot["h"],
-            "font_size": 30, "color": text_color
-        })
-
-    if ad_output.details_block and "details_block" in slots:
-        slot = slots["details_block"]
-        db_obj = ad_output.details_block
-        parts = []
-        if db_obj.date_time: parts.append(db_obj.date_time)
-        if db_obj.location: parts.append(db_obj.location)
-        if db_obj.featuring: parts.append("Ft: " + ", ".join(db_obj.featuring))
-        content = " | ".join(parts)
-        if content:
-            validation_elements.append({
-                "type": "text", "role": "details_block", "content": content,
-                "x": slot["x"], "y": slot["y"], "w": slot["w"], "h": slot["h"],
-                "font_size": 20, "color": text_color
-            })
-
-    if ad_output.cta_text and "cta_text" in slots:
-        slot = slots["cta_text"]
-        validation_elements.append({
-            "type": "text", "role": "cta_text", "content": ad_output.cta_text,
-            "x": slot["x"], "y": slot["y"], "w": slot["w"], "h": slot["h"],
-            "font_size": 24, "color": text_color
-        })
-        
-    for r in resolved_asset_refs:
-        slot_name = r.get("slot")
-        if slot_name in slots:
-            slot = slots[slot_name]
-            r["x"], r["y"], r["w"], r["h"] = slot["x"], slot["y"], slot["w"], slot["h"]
-            validation_elements.append(r)
+    for elem in resolved_asset_refs:
+        slot_name = elem.get("slot")
+        if slot_name in template_slots:
+            slot_config = template_slots[slot_name]
+            elem["x"] = slot_config["x"]
+            elem["y"] = slot_config["y"]
+            elem["w"] = slot_config["w"]
+            elem["h"] = slot_config["h"]
+            elem["text_align"] = slot_config.get("align", "left")
+            validation_elements.append(elem)
+        elif (
+            elem.get("type") in ("photo", "cat_photo")
+            or elem.get("role") in ("background", "contrast_overlay", "backdrop")
+            or slot_name in ("background", "canvas_background", "backdrop")
+            or elem.get("z_index", 1) <= 1
+        ):
+            elem["x"] = 0
+            elem["y"] = 0
+            elem["w"] = canvas_w
+            elem["h"] = canvas_h
+            validation_elements.append(elem)
         else:
-            logger.warning("[run=%s] Dropping element '%s' — slot '%s' not found in template '%s'", 
-                           run_id, r.get("description"), slot_name, ad_output.template_id)
+            logger.warning("[run=%s] Dropping element mapped to invalid slot: %r for template %r", run_id, slot_name, ad_output.template_id)
 
     final_opacity = validate_and_fix_composition(
         elements=validation_elements,
@@ -218,11 +226,14 @@ def _generate_single_candidate(
             canvas_w=canvas_w,
             canvas_h=canvas_h,
             overlay_opacity=final_opacity,
-            background_choice=ad_output.background_choice.model_dump() if ad_output.background_choice else None,
+            background_color=background_color,
             run_id=run_id,
+            allow_pexels_bg=allow_pexels_bg,
+            allow_cat_bg=allow_cat_bg,
         )
     except Exception as e:
-        logger.error("[run=%s][Candidate #%d] Render failed: %s", run_id, candidate_index, e)
+        import traceback
+        logger.error("[run=%s][Candidate #%d] Render failed: %s\n%s", run_id, candidate_index, e, traceback.format_exc())
         base64_img, output_path = None, None
 
     original_critic = VisionCriticResponse(status="pass")
@@ -256,8 +267,10 @@ def _generate_single_candidate(
                     font_pair_id=ad_output.font_pair_id,
                     canvas_w=canvas_w, canvas_h=canvas_h,
                     overlay_opacity=final_opacity,
-                    background_choice=ad_output.background_choice.model_dump() if ad_output.background_choice else None,
+                    background_color=background_color,
                     run_id=run_id,
+                    allow_pexels_bg=allow_pexels_bg,
+                    allow_cat_bg=allow_cat_bg,
                 )
                 if new_base64_img:
                     base64_img, output_path = new_base64_img, new_output_path
@@ -285,10 +298,7 @@ def _generate_single_candidate(
         "temperature": temperature,
         "art_director_output": ad_output.model_dump(),
         "resolved_assets": resolved_asset_refs,
-        "background_choice": (
-            ad_output.background_choice.model_dump()
-            if ad_output.background_choice else None
-        ),
+        "background_resolution": None,
         "template_id": ad_output.template_id,
         "palette_id": ad_output.palette_id,
         "font_pair_id": ad_output.font_pair_id,
@@ -319,24 +329,34 @@ def _generate_single_candidate(
 
 async def generatePoster(
     topic: str,
-    persona_id: int,
+    persona_id: int | None,
     db: Session,
     user_id: int,
     candidate_count: int | None = None,
+    use_news_grounding: bool = False,
+    allow_pexels_bg: bool = False,
+    allow_cat_bg: bool = False,
+    headline_hint: str | None = None,
+    subheadline_hint: str | None = None,
+    badge_hint: str | None = None,
+    visual_asset_query: str | None = None,
+    mood_hint: str | None = None,
+    brand_palette_id: str | None = None,
+    brand_font_pair_id: str | None = None,
 ):
     persona = None
-    brand_palette_id = None
-    brand_font_pair_id = None
     if persona_id:
         persona = db.query(models.AIPersona).filter(models.AIPersona.id == persona_id).first()
         if persona:
-            brand_palette_id = persona.brand_palette_id
-            brand_font_pair_id = persona.brand_font_pair_id
+            brand_palette_id = brand_palette_id or persona.brand_palette_id
+            brand_font_pair_id = brand_font_pair_id or persona.brand_font_pair_id
 
     num_candidates = candidate_count or (getattr(persona, "candidate_count", 3) if persona else 3) or 3
     num_candidates = max(1, min(num_candidates, 5))
 
     logger.info("Generating %d poster candidate(s)...", num_candidates)
+    if use_news_grounding:
+        logger.info("use_news_grounding requested, but Poster Studio has no dedicated Google News API text-generation path wired; skipping.")
 
     candidates = []
     temperatures = [0.7, 0.85, 0.9, 0.95, 1.0]
@@ -351,26 +371,46 @@ async def generatePoster(
             db=db,
             candidate_index=i + 1,
             temperature=temp,
+            allow_pexels_bg=allow_pexels_bg,
+            allow_cat_bg=allow_cat_bg,
+            headline_hint=headline_hint,
+            subheadline_hint=subheadline_hint,
+            badge_hint=badge_hint,
+            visual_asset_query=visual_asset_query,
+            mood_hint=mood_hint,
         )
         candidates.append(cand)
 
     candidates.sort(key=lambda c: c["composite_score"], reverse=True)
     winner = candidates[0]
 
+    if winner.get("base64_image") is None:
+        logger.error("All poster candidates failed to generate.")
+        raise RuntimeError("Poster pipeline failed: The AI model could not generate a valid design. Please try again or check your model connection.")
+
     logger.info(
         "Selected winning candidate #%d with score %.3f (critic=%s, aesthetic=%.3f)",
         winner["candidate_index"], winner["composite_score"], winner["critic_status"], winner["aesthetic_score"],
     )
 
-    # Discard non-selected candidate output files without leaving orphaned uploads
-    for cand in candidates[1:]:
-        discarded_path = cand.get("output_path")
-        if discarded_path and os.path.exists(discarded_path):
-            try:
-                os.remove(discarded_path)
-                logger.info("Purged discarded candidate #%d output file: %s", cand["candidate_index"], discarded_path)
-            except Exception as e:
-                logger.warning("Failed to purge discarded output file %s: %s", discarded_path, e)
+    # Compile all generated variants for multi-variant selection
+    variants = [
+        {
+            "candidate_index": c["candidate_index"],
+            "composite_score": c["composite_score"],
+            "aesthetic_score": c["aesthetic_score"],
+            "critic_status": c["critic_status"],
+            "is_winner": (c["candidate_index"] == winner["candidate_index"]),
+            "base64_image": c["base64_image"],
+            "output_path": c["output_path"],
+            "art_director": c["art_director"],
+            "resolved_assets": c["resolved_assets"],
+            "final_opacity": c["final_opacity"],
+            "vision_critic": c["vision_critic"],
+        }
+        for c in candidates
+        if c.get("base64_image")
+    ]
 
     summary_scores = [
         {
@@ -388,8 +428,10 @@ async def generatePoster(
         "run_id": winner["run_id"],
         "winning_candidate_index": winner["candidate_index"],
         "candidate_scores": summary_scores,
+        "variants": variants,
         "art_director": winner["art_director"],
         "resolved_assets": winner["resolved_assets"],
+        "background_resolution": None,
         "final_opacity": winner["final_opacity"],
         "vision_critic": winner["vision_critic"],
         "original_vision_critic": winner.get("original_vision_critic"),
@@ -400,3 +442,209 @@ async def generatePoster(
         "output_path": winner["output_path"],
     }
 
+async def regeneratePosterLayer(
+    element_index: int,
+    current_state: dict,
+    topic: str,
+    db: Session,
+    user_id: int,
+    prompt_hint: str | None = None,
+    allow_pexels_bg: bool = False,
+    allow_cat_bg: bool = False,
+):
+    from app.services.art_director import run_art_director_layer_regen
+    
+    run_id = str(uuid.uuid4())
+    logger.info("[run=%s] Regenerating single layer index %d for topic '%s'...", run_id, element_index, topic)
+
+    resolved_assets = list(current_state.get("resolved_assets", []))
+    if element_index < 0 or element_index >= len(resolved_assets):
+        raise ValueError(f"Invalid element index {element_index} (total {len(resolved_assets)} elements)")
+
+    target_elem = dict(resolved_assets[element_index])
+    
+    # 1. Ask LLM to regenerate copy/keywords for this specific layer
+    regen_patch = run_art_director_layer_regen(
+        target_element=target_elem,
+        topic=topic,
+        prompt_hint=prompt_hint,
+        user_id=user_id,
+        db=db,
+    )
+
+    # 2. Apply patch to target_elem
+    for k, v in regen_patch.items():
+        if v is not None:
+            target_elem[k] = v
+
+    # 3. If it's an asset layer (icon, emoji, photo), resolve fresh resource
+    if target_elem.get("type") in ["icon", "emoji", "cat_photo", "photo"]:
+        asset_ref = resolve_resource(
+            asset_type=target_elem["type"],
+            description=target_elem.get("description", topic),
+            user_id=user_id,
+            db=db,
+            allow_cat_bg=allow_cat_bg,
+        )
+        if asset_ref.get("resolved"):
+            target_elem.update(asset_ref)
+
+    resolved_assets[element_index] = target_elem
+
+    art_director = current_state.get("art_director", {})
+    template_id = art_director.get("template_id", "centered-hero")
+    palette_id = art_director.get("palette_id", "vibrant_indigo")
+    font_pair_id = art_director.get("font_pair_id", "bold_modern")
+    background_color = art_director.get("background_color", "#111827")
+
+    canvas_w = current_state.get("canvas_w", 1080)
+    canvas_h = current_state.get("canvas_h", 1080)
+
+    palette = next((p for p in PALETTES if p["id"] == palette_id), PALETTES[0])
+
+    final_opacity = validate_and_fix_composition(
+        elements=resolved_assets,
+        canvas_w=canvas_w,
+        canvas_h=canvas_h,
+        background_color=background_color,
+        overlay_opacity=current_state.get("final_opacity", 0.0),
+        palette=palette,
+    )
+
+    try:
+        base64_img, output_path = render_poster_to_base64(
+            elements=resolved_assets,
+            template_id=template_id,
+            palette_id=palette_id,
+            font_pair_id=font_pair_id,
+            canvas_w=canvas_w,
+            canvas_h=canvas_h,
+            overlay_opacity=final_opacity,
+            background_color=background_color,
+            run_id=run_id,
+            allow_pexels_bg=allow_pexels_bg,
+            allow_cat_bg=allow_cat_bg,
+        )
+    except Exception as e:
+        logger.error("[run=%s] Render failed for layer regeneration: %s", run_id, e)
+        base64_img, output_path = None, None
+
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "regenerated_index": element_index,
+        "art_director": art_director,
+        "resolved_assets": resolved_assets,
+        "final_opacity": final_opacity,
+        "base64_image": base64_img,
+        "output_path": output_path,
+    }
+
+async def mutatePoster(
+
+    mutation_prompt: str,
+    current_state: dict,
+    db: Session,
+    user_id: int,
+    allow_pexels_bg: bool = False,
+    allow_cat_bg: bool = False,
+):
+    from app.services.art_director import run_art_director_mutation
+    
+    run_id = str(uuid.uuid4())
+    logger.info("[run=%s] Running AI Art Director Mutation...", run_id)
+    
+    # 1. Ask LLM to mutate the JSON
+    try:
+        ad_output = run_art_director_mutation(
+            mutation_prompt=mutation_prompt,
+            current_state=current_state,
+            user_id=user_id,
+            db=db,
+        )
+    except Exception as exc:
+        logger.error("[run=%s] Mutation failed: %s", run_id, exc)
+        raise exc
+
+    # 2. Resolve missing assets
+    resolved_asset_refs = []
+    for elem in ad_output.elements:
+        elem_dict = elem.model_dump()
+        
+        # If the LLM changed the description or type, or didn't preserve the 'resolved' field, resolve it again
+        if not elem_dict.get("resolved") and elem_dict.get("type") in ["icon", "emoji", "cat_photo", "photo"]:
+            asset_ref = resolve_resource(
+                asset_type=elem_dict["type"],
+                description=elem_dict["description"],
+                user_id=user_id,
+                db=db,
+                allow_cat_bg=allow_cat_bg,
+            )
+            if asset_ref["resolved"] is None:
+                continue
+            elem_dict.update(asset_ref)
+            
+        resolved_asset_refs.append(elem_dict)
+
+    # 3. Ensure slots/coordinates are applied if LLM reset them
+    canvas_w, canvas_h = 1080, 1080 # default, can be passed
+    template_slots = resolve_template_slots(ad_output.template_id, canvas_w, canvas_h)
+    
+    validation_elements = []
+    for elem in resolved_asset_refs:
+        # if LLM stripped coordinates, re-apply them from slots
+        if elem.get("x") is None:
+            slot_name = elem.get("slot")
+            if slot_name in template_slots:
+                slot_config = template_slots[slot_name]
+                elem["x"] = slot_config["x"]
+                elem["y"] = slot_config["y"]
+                elem["w"] = slot_config["w"]
+                elem["h"] = slot_config["h"]
+                elem["text_align"] = slot_config.get("align", "left")
+            elif elem.get("type") in ("photo", "cat_photo") and elem.get("z_index", 1) == 0:
+                elem["x"] = 0
+                elem["y"] = 0
+                elem["w"] = canvas_w
+                elem["h"] = canvas_h
+        validation_elements.append(elem)
+
+    palette = next((p for p in PALETTES if p["id"] == ad_output.palette_id), PALETTES[0])
+    
+    # We skip Vision Critic for mutations to keep it fast, or we could run it.
+    final_opacity = validate_and_fix_composition(
+        elements=validation_elements,
+        canvas_w=canvas_w,
+        canvas_h=canvas_h,
+        background_color=ad_output.background_color,
+        overlay_opacity=0.0,
+        palette=palette,
+    )
+
+    try:
+        base64_img, output_path = render_poster_to_base64(
+            elements=validation_elements,
+            template_id=ad_output.template_id,
+            palette_id=ad_output.palette_id,
+            font_pair_id=ad_output.font_pair_id,
+            canvas_w=canvas_w,
+            canvas_h=canvas_h,
+            overlay_opacity=final_opacity,
+            background_color=ad_output.background_color,
+            run_id=run_id,
+            allow_pexels_bg=allow_pexels_bg,
+            allow_cat_bg=allow_cat_bg,
+        )
+    except Exception as e:
+        logger.error("[run=%s] Render failed for mutation: %s", run_id, e)
+        base64_img, output_path = None, None
+
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "art_director": ad_output.model_dump(),
+        "resolved_assets": validation_elements,
+        "final_opacity": final_opacity,
+        "base64_image": base64_img,
+        "output_path": output_path,
+    }

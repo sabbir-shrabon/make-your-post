@@ -689,3 +689,30 @@ class ScheduledSlot(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
     persona: Mapped["AIPersona"] = relationship("AIPersona")
+
+
+class CustomTheme(Base):
+    __tablename__ = "custom_themes"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String, default="meme", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    assets: Mapped[list["ThemeAsset"]] = relationship("ThemeAsset", back_populates="theme", cascade="all, delete-orphan")
+
+
+class ThemeAsset(Base):
+    __tablename__ = "theme_assets"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4()))
+    theme_id: Mapped[str] = mapped_column(ForeignKey("custom_themes.id", ondelete="CASCADE"), index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    caption_prompt_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    theme: Mapped["CustomTheme"] = relationship("CustomTheme", back_populates="assets")
+

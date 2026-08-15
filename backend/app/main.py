@@ -94,6 +94,9 @@ from app.routers.schedule_routes import router as schedule_routes_router
 from app.routers.stock_photos import router as stock_photos_router
 from app.routers.cat_photos import router as cat_photos_router
 from app.routers.poster_studio import router as poster_studio_router
+from app.routers.campaign import router as campaign_router
+from app.routers.meme import router as meme_router
+from app.routers.fonts import router as fonts_router
 from app.mistral_service import (
     suggest_prompt_improvement,
     synthesize_learned_strategy,
@@ -423,6 +426,9 @@ app.include_router(schedule_routes_router)
 app.include_router(stock_photos_router)
 app.include_router(cat_photos_router)
 app.include_router(poster_studio_router)
+app.include_router(campaign_router)
+app.include_router(meme_router)
+app.include_router(fonts_router)
 
 # ---------------------------------------------------------------------------
 # CORS — Dynamic, env-driven origin allowlist
@@ -667,10 +673,11 @@ def _get_pending_or_global_facebook_credentials(user_id: int) -> tuple[str, str]
 def start_facebook_oauth_route(
     request: Request,
     token: str = Query(...),
+    session_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     user = facebook_oauth.current_user_from_popup_token(token, db)
-    return facebook_oauth.start_facebook_oauth(request, user, db)
+    return facebook_oauth.start_facebook_oauth(request, user, db, session_id)
 
 
 @app.get("/auth/facebook/callback", response_class=HTMLResponse)
@@ -690,6 +697,22 @@ async def select_facebook_page_from_popup_route(
     db: Session = Depends(get_db),
 ):
     return await facebook_oauth.handle_select_page_from_popup(request, db)
+
+
+@app.get("/auth/facebook/status")
+def get_facebook_oauth_status(session_id: str = Query(...)):
+    status_data = facebook_oauth.oauth_polling_sessions.get(session_id)
+    if not status_data:
+        return {"status": "pending"}
+    
+    # Optional: Once the frontend successfully receives it, we can remove it
+    # to avoid memory leak if it's not a generic success/error.
+    if status_data["status"] != "pending":
+        # Keep it around for a moment in case of network blips, 
+        # but pop it for simple cleanup.
+        return facebook_oauth.oauth_polling_sessions.pop(session_id)
+        
+    return status_data
 
 
 @app.post("/facebook/oauth-url", response_model=schemas.FacebookOAuthUrlResponse)

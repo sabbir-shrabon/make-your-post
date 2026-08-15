@@ -45,14 +45,14 @@ def simplify_query(query: str) -> str:
     core_noun = filtered_words[-1]
     return SYNONYM_MAP.get(core_noun, core_noun)
 
-def resolve_icon(query: str, allow_fallback: bool = True) -> str | None:
+def resolve_icon(query: str, allow_fallback: bool = True) -> tuple[str | None, list[str]]:
     """
     Resolve a query to an Iconify ID constrained to CURATED_ICON_PREFIXES.
-    Calls Iconify search API. Returns top result's icon id.
+    Calls Iconify search API. Returns (top result's icon id, list of up to 10 candidates).
     Retries once with simplified query if zero results.
     """
     if not query:
-        return None
+        return None, []
         
     prefixes_str = ",".join(CURATED_ICON_PREFIXES)
     url = f"https://api.iconify.design/search?query={urllib.parse.quote(query)}&prefixes={prefixes_str}"
@@ -62,14 +62,14 @@ def resolve_icon(query: str, allow_fallback: bool = True) -> str | None:
             data = json.loads(response.read())
             icons = data.get("icons", [])
             if icons:
-                return icons[0]
+                return icons[0], icons[:10]
     except Exception as e:
         logger.warning(f"Error fetching icon for '{query}': {e}")
 
     # Retry with simplified query
     simplified = simplify_query(query)
     if not simplified or simplified == query.lower():
-        return "lucide:sparkles" if allow_fallback else None
+        return ("lucide:sparkles", ["lucide:sparkles"]) if allow_fallback else (None, [])
 
     url_retry = f"https://api.iconify.design/search?query={urllib.parse.quote(simplified)}&prefixes={prefixes_str}"
     try:
@@ -78,12 +78,12 @@ def resolve_icon(query: str, allow_fallback: bool = True) -> str | None:
             data = json.loads(response.read())
             icons = data.get("icons", [])
             if icons:
-                return icons[0]
+                return icons[0], icons[:10]
     except Exception as e:
         logger.warning(f"Error fetching icon for '{simplified}' (retry): {e}")
 
     # Fallback to standard icon
-    return "lucide:sparkles" if allow_fallback else None
+    return ("lucide:sparkles", ["lucide:sparkles"]) if allow_fallback else (None, [])
 
 
 

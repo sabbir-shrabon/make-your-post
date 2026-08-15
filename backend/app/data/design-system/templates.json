@@ -132,5 +132,80 @@
       "text_logo":   { "x_pct": 80, "y_pct": 92, "w_pct": 15, "h_pct": 5,  "align": "right" },
       "corner_badge":{ "x_pct": 5,  "y_pct": 25, "w_pct": 15, "h_pct": 15, "align": "center" }
     }
+  },
+  {
+    "id": "asymmetric-editorial",
+    "name": "Asymmetric Editorial",
+    "best_for": ["thought-leadership", "editorial", "insights", "tech"],
+    "slots": {
+      "headline":    { "x_pct": 8,  "y_pct": 15, "w_pct": 55, "h_pct": 35, "align": "left" },
+      "subheadline": { "x_pct": 8,  "y_pct": 55, "w_pct": 50, "h_pct": 20, "align": "left" },
+      "corner_badge":{ "x_pct": 68, "y_pct": 12, "w_pct": 24, "h_pct": 24, "align": "center" },
+      "accent_icon": { "x_pct": 72, "y_pct": 50, "w_pct": 18, "h_pct": 18, "align": "center" },
+      "text_logo":   { "x_pct": 8,  "y_pct": 88, "w_pct": 35, "h_pct": 6,  "align": "left" },
+      "cta_text":    { "x_pct": 55, "y_pct": 88, "w_pct": 38, "h_pct": 6,  "align": "right" }
+    }
+  },
+  {
+    "id": "magazine-cover",
+    "name": "Magazine Cover",
+    "best_for": ["announcement", "features", "spotlight"],
+    "slots": {
+      "corner_badge":{ "x_pct": 6,  "y_pct": 6,  "w_pct": 22, "h_pct": 12, "align": "center" },
+      "headline":    { "x_pct": 6,  "y_pct": 22, "w_pct": 88, "h_pct": 25, "align": "left" },
+      "subheadline": { "x_pct": 6,  "y_pct": 50, "w_pct": 65, "h_pct": 25, "align": "left" },
+      "accent_icon": { "x_pct": 78, "y_pct": 52, "w_pct": 16, "h_pct": 16, "align": "center" },
+      "details_block":{ "x_pct": 6, "y_pct": 80, "w_pct": 88, "h_pct": 8,  "align": "left" },
+      "text_logo":   { "x_pct": 6,  "y_pct": 90, "w_pct": 30, "h_pct": 5,  "align": "left" }
+    }
+  },
+  {
+    "id": "bold-punchline",
+    "name": "Bold Punchline",
+    "best_for": ["quote", "bold", "viral", "creative"],
+    "slots": {
+      "accent_icon": { "x_pct": 8,  "y_pct": 10, "w_pct": 14, "h_pct": 14, "align": "left" },
+      "headline":    { "x_pct": 8,  "y_pct": 28, "w_pct": 84, "h_pct": 42, "align": "left" },
+      "subheadline": { "x_pct": 8,  "y_pct": 74, "w_pct": 75, "h_pct": 12, "align": "left" },
+      "corner_badge":{ "x_pct": 74, "y_pct": 8,  "w_pct": 18, "h_pct": 18, "align": "center" },
+      "text_logo":   { "x_pct": 8,  "y_pct": 90, "w_pct": 30, "h_pct": 5,  "align": "left" }
+    }
+  },
+  {
+    "id": "stat-metric-callout",
+    "name": "Stat / Metric Callout",
+    "best_for": ["stats", "data", "growth", "proof", "authority"],
+    "slots": {
+      "corner_badge":{ "x_pct": 8,  "y_pct": 8,  "w_pct": 28, "h_pct": 8,  "align": "center" },
+      "headline":    { "x_pct": 8,  "y_pct": 20, "w_pct": 84, "h_pct": 34, "align": "left" },
+      "subheadline": { "x_pct": 8,  "y_pct": 58, "w_pct": 84, "h_pct": 20, "align": "left" },
+      "details_block":{ "x_pct": 8, "y_pct": 82, "w_pct": 50, "h_pct": 8,  "align": "left" },
+      "text_logo":   { "x_pct": 65, "y_pct": 88, "w_pct": 28, "h_pct": 6,  "align": "right" }
+    }
+  },
+  {
+    "id": "editorial-quote-card",
+    "name": "Editorial Quote Card",
+    "best_for": ["quote", "testimonial", "thoughts", "founder-insights"],
+    "slots": {
+      "accent_icon": { "x_pct": 8,  "y_pct": 10, "w_pct": 14, "h_pct": 14, "align": "left" },
+      "corner_badge":{ "x_pct": 72, "y_pct": 10, "w_pct": 20, "h_pct": 8,  "align": "center" },
+      "headline":    { "x_pct": 8,  "y_pct": 28, "w_pct": 84, "h_pct": 44, "align": "left" },
+      "subheadline": { "x_pct": 8,  "y_pct": 76, "w_pct": 65, "h_pct": 10, "align": "left" },
+      "text_logo":   { "x_pct": 8,  "y_pct": 90, "w_pct": 30, "h_pct": 6,  "align": "left" }
+    }
+  },
+  {
+    "id": "minimal-takeaway-card",
+    "name": "Minimal Takeaway Card",
+    "best_for": ["tips", "takeaways", "checklist", "education", "framework"],
+    "slots": {
+      "corner_badge":{ "x_pct": 8,  "y_pct": 8,  "w_pct": 26, "h_pct": 8,  "align": "center" },
+      "headline":    { "x_pct": 8,  "y_pct": 20, "w_pct": 84, "h_pct": 24, "align": "left" },
+      "subheadline": { "x_pct": 8,  "y_pct": 48, "w_pct": 84, "h_pct": 34, "align": "left" },
+      "text_logo":   { "x_pct": 8,  "y_pct": 88, "w_pct": 30, "h_pct": 6,  "align": "left" },
+      "cta_text":    { "x_pct": 55, "y_pct": 88, "w_pct": 37, "h_pct": 6,  "align": "right" }
+    }
   }
 ]
+

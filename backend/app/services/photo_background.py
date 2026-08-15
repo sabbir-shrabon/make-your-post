@@ -33,22 +33,42 @@ def _cache_key(query: str) -> str:
     return hashlib.sha256(query.strip().lower().encode()).hexdigest()[:24]
 
 
+def _search_pexels_multiple(query: str, api_key: str | None = None) -> list[str]:
+    """Hit Pexels search API, return up to 10 'large2x' URLs."""
+    if not api_key:
+        api_key = os.getenv("PEXELS_API_KEY", "")
+    if not api_key:
+        return []
+    if not query.strip():
+        logger.info("Pexels search aborted: query is empty.")
+        return []
+        
+    params = urllib.parse.urlencode({"query": query, "per_page": 10, "orientation": "square"})
+    url = f"{PEXELS_SEARCH_URL}?{params}"
+    try:
+        req = urllib.request.Request(url, headers={
+            "Authorization": api_key,
+            "User-Agent": "Mozilla/5.0",
+        })
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+            data = json.loads(resp.read())
+        photos = data.get("photos", [])
+        
+        urls = []
+        for p in photos:
+            src = p.get("src", {})
+            u = src.get("large2x") or src.get("large") or src.get("original")
+            if u:
+                urls.append(u)
+        return urls
+    except Exception as e:
+        logger.warning(f"Pexels search multiple failed: {e}")
+        return []
+
 def _search_pexels(query: str, api_key: str) -> str | None:
     """Hit Pexels search API, return the 'large2x' URL of the top result, or None."""
-    params = urllib.parse.urlencode({"query": query, "per_page": 1, "orientation": "square"})
-    url = f"{PEXELS_SEARCH_URL}?{params}"
-    req = urllib.request.Request(url, headers={
-        "Authorization": api_key,
-        "User-Agent": "Mozilla/5.0",
-    })
-    with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
-        data = json.loads(resp.read())
-    photos = data.get("photos", [])
-    if not photos:
-        return None
-    # Prefer large2x for quality; fall back to large, then original
-    src = photos[0].get("src", {})
-    return src.get("large2x") or src.get("large") or src.get("original")
+    urls = _search_pexels_multiple(query, api_key)
+    return urls[0] if urls else None
 
 
 def _download_image(url: str) -> bytes:

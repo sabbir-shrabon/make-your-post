@@ -2,7 +2,7 @@
 
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { Composer } from "@/components/social-platform"
+import { Composer } from "@/components/dashboard/views/composer-view"
 import { Loader2 } from "lucide-react"
 
 export default function CreatePostPage() {

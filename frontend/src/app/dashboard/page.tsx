@@ -2,7 +2,7 @@
 
 import { useApp } from "@/contexts/app-context"
 import { useAuth } from "@/contexts/auth-context"
-import { HomeView } from "@/components/social-platform"
+import { HomeView } from "@/components/dashboard/views/home-view"
 import { Loader2 } from "lucide-react"
 
 export default function DashboardPage() {

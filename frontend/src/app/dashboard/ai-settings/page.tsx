@@ -1,7 +1,7 @@
 "use client"
 
 import { useApp } from "@/contexts/app-context"
-import { AISettingsView } from "@/components/social-platform"
+import { AISettingsView } from "@/components/dashboard/views/ai-settings-view"
 import { Loader2 } from "lucide-react"
 
 export default function AISettingsPage() {

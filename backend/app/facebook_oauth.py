@@ -28,6 +28,9 @@ from app.crypto import encrypt_token
 
 logger = logging.getLogger(__name__)
 
+# Global registry for polling OAuth status (session_id -> {"status": "pending|success|error", "message": "..."})
+oauth_polling_sessions: dict[str, dict] = {}
+
 FACEBOOK_OAUTH_GRAPH_VERSION = "v18.0"
 FACEBOOK_GRAPH_OAUTH_BASE = f"https://graph.facebook.com/{FACEBOOK_OAUTH_GRAPH_VERSION}"
 FACEBOOK_DIALOG_OAUTH_BASE = f"https://www.facebook.com/{FACEBOOK_OAUTH_GRAPH_VERSION}/dialog/oauth"
@@ -97,15 +100,8 @@ def _clear_oauth_session(request: Request) -> None:
 
 
 def _popup_error_html(message: str) -> HTMLResponse:
-    message_js = message.replace("\\", "\\\\").replace("'", "\\'")
     return HTMLResponse(
         f"""<!doctype html><html><body><p>{message}</p><script>
-        if (window.opener) {{
-          window.opener.postMessage(
-            {{ type: 'FACEBOOK_CONNECT_ERROR', message: '{message_js}' }},
-            '{FRONTEND_URL}'
-          );
-        }}
         window.close();
         </script></body></html>"""
     )
@@ -113,19 +109,13 @@ def _popup_error_html(message: str) -> HTMLResponse:
 
 def _popup_success_html(page_id: str) -> HTMLResponse:
     return HTMLResponse(
-        f"""<!doctype html><html><body><script>
-        if (window.opener) {{
-          window.opener.postMessage(
-            {{ type: 'FACEBOOK_CONNECT_SUCCESS', pageId: '{page_id}' }},
-            '{FRONTEND_URL}'
-          );
-        }}
+        """<!doctype html><html><body><script>
         window.close();
         </script></body></html>"""
     )
 
 
-def _page_picker_html(pages: list[dict]) -> HTMLResponse:
+def _page_picker_html(pages: list[dict], session_id: str | None = None) -> HTMLResponse:
     cards = "".join(
         f"""
         <button type="submit" name="page_id" value="{page['page_id']}"
@@ -135,10 +125,12 @@ def _page_picker_html(pages: list[dict]) -> HTMLResponse:
         """
         for page in pages
     )
+    session_input = f'<input type="hidden" name="session_id" value="{session_id}">' if session_id else ""
     return HTMLResponse(
         f"""<!doctype html><html><body style="font-family:system-ui;padding:24px;">
         <h1>Select Facebook Page</h1>
         <form method="post" action="/auth/facebook/select-page">
+          {session_input}
           {cards}
         </form></body></html>"""
     )
@@ -377,11 +369,15 @@ async def complete_page_selection(
     return connection
 
 
-def start_facebook_oauth(request: Request, user: models.User, db: Session) -> RedirectResponse:
+def start_facebook_oauth(request: Request, user: models.User, db: Session, session_id: str | None = None) -> RedirectResponse:
     if not FACEBOOK_APP_ID or not FACEBOOK_APP_SECRET:
         _facebook_error("Facebook app credentials are not configured", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     state = _create_oauth_state(db, user.id)
+    if session_id:
+        state = f"{state}:{session_id}"
+        oauth_polling_sessions[session_id] = {"status": "pending"}
+
     request.session["oauth_state"] = state
     request.session["oauth_user_id"] = user.id
     logger.info("OAuth flow started for user %s", user.id)
@@ -405,13 +401,21 @@ async def handle_facebook_callback(
     state: str | None,
     error: str | None,
 ) -> HTMLResponse:
+    session_id = None
+    if state and ":" in state:
+        state, session_id = state.split(":", 1)
+
     if error:
+        if session_id:
+            oauth_polling_sessions[session_id] = {"status": "error", "message": error}
         return _popup_error_html(f"Facebook returned an error: {error}")
 
     # Verify OAuth state from database instead of session
     user_id = _verify_oauth_state(db, state) if state else None
     if not code or not state or not user_id:
         logger.warning("OAuth state mismatch for state %s", state)
+        if session_id:
+            oauth_polling_sessions[session_id] = {"status": "error", "message": "Security check failed"}
         return _popup_error_html("Security check failed. Please try again.")
 
     request.session.pop("oauth_state", None)
@@ -419,11 +423,15 @@ async def handle_facebook_callback(
     access_token, token_data = await _exchange_code_for_token(code)
     if not access_token:
         _clear_oauth_session(request)
+        if session_id:
+            oauth_polling_sessions[session_id] = {"status": "error", "message": "Failed to connect"}
         return _popup_error_html("Failed to connect to Facebook. Please try again.")
 
     pages = await _fetch_managed_pages(access_token)
     if not pages:
         _clear_oauth_session(request)
+        if session_id:
+            oauth_polling_sessions[session_id] = {"status": "error", "message": "No pages found"}
         return _popup_error_html(
             "No Facebook Pages found on this account. You need to be an admin of at least one Facebook Page."
         )
@@ -438,10 +446,15 @@ async def handle_facebook_callback(
         try:
             connection = await complete_page_selection(request, db, int(user_id), pages[0]["page_id"])
         except HTTPException as exc:
+            if session_id:
+                oauth_polling_sessions[session_id] = {"status": "error", "message": str(exc.detail)}
             return _popup_error_html(str(exc.detail))
+        
+        if session_id:
+            oauth_polling_sessions[session_id] = {"status": "success", "pageId": connection.page_id}
         return _popup_success_html(connection.page_id)
 
-    return _page_picker_html(pages)
+    return _page_picker_html(pages, session_id)
 
 
 async def handle_select_page_from_popup(
@@ -450,18 +463,28 @@ async def handle_select_page_from_popup(
 ) -> HTMLResponse:
     form = await request.form()
     selected_page_id = form.get("page_id")
+    session_id = form.get("session_id")
+    
     if not selected_page_id:
+        if session_id:
+            oauth_polling_sessions[str(session_id)] = {"status": "error", "message": "Please select a Facebook Page."}
         return _popup_error_html("Please select a Facebook Page.")
 
     user_id = request.session.get("oauth_user_id")
     if not user_id:
+        if session_id:
+            oauth_polling_sessions[str(session_id)] = {"status": "error", "message": "Security check failed."}
         return _popup_error_html("Security check failed. Please try again.")
 
     try:
         connection = await complete_page_selection(request, db, int(user_id), str(selected_page_id))
     except HTTPException as exc:
+        if session_id:
+            oauth_polling_sessions[str(session_id)] = {"status": "error", "message": str(exc.detail)}
         return _popup_error_html(str(exc.detail))
 
+    if session_id:
+        oauth_polling_sessions[str(session_id)] = {"status": "success", "pageId": connection.page_id}
     return _popup_success_html(connection.page_id)
 
 

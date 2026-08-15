@@ -108,35 +108,55 @@ def render_text_layer_pango(
             "/usr/share/fonts/opentype/noto/NotoSansBengali-Regular.ttf",
         ]
         
-        # Binary search for auto_fit
+        # Auto-fit with 10% step shrink and ellipsis truncation at 12pt floor
         if fit_mode == "auto_fit":
-            low, high = 10, 120
-            best_size = 10
-            best_font = None
-            while low <= high:
-                mid = (low + high) // 2
+            def _check_fit(test_text, size_px):
                 font_obj = None
                 for fp in font_candidates:
                     try:
-                        font_obj = ImageFont.truetype(fp, mid)
+                        font_obj = ImageFont.truetype(fp, size_px)
                         break
                     except Exception:
                         continue
                 if font_obj is None:
                     font_obj = ImageFont.load_default()
-                bbox = draw.textbbox((0, 0), text, font=font_obj)
-                tw = bbox[2] - bbox[0]
-                th = bbox[3] - bbox[1]
-                if tw <= layer_width_px and th <= layer_height_px:
-                    best_size = mid
-                    best_font = font_obj
-                    low = mid + 1
-                else:
-                    high = mid - 1
-            font_size_px = best_size
-            font_obj = best_font
-            if font_obj is None:
-                font_obj = ImageFont.load_default()
+                bbox = draw.textbbox((0, 0), test_text, font=font_obj)
+                return (bbox[2] - bbox[0], bbox[3] - bbox[1]), font_obj
+                
+            (tw, th), font_obj = _check_fit(text, font_size_px)
+            while (tw > layer_width_px or th > layer_height_px) and font_size_px > 12:
+                next_size = int(font_size_px * 0.9)
+                if next_size <= 12:
+                    font_size_px = 12
+                    (tw, th), font_obj = _check_fit(text, font_size_px)
+                    break
+                font_size_px = next_size
+                (tw, th), font_obj = _check_fit(text, font_size_px)
+                
+            if (tw > layer_width_px or th > layer_height_px) and font_size_px <= 12:
+                logger.warning(f"Ellipsis truncation triggered for Prompt Studio text (PIL fallback). Text was too long even at {font_size_px}px floor: '{text}'")
+                words = text.split()
+                found_fit = False
+                if words:
+                    for i in range(len(words) - 1, -1, -1):
+                        test_t = " ".join(words[:i+1]) + "..."
+                        (tw, th), font_obj = _check_fit(test_t, font_size_px)
+                        if tw <= layer_width_px and th <= layer_height_px:
+                            text = test_t
+                            found_fit = True
+                            break
+                    if not found_fit:
+                        first = words[0]
+                        for i in range(len(first) - 1, 0, -1):
+                            test_t = first[:i] + "..."
+                            (tw, th), font_obj = _check_fit(test_t, font_size_px)
+                            if tw <= layer_width_px and th <= layer_height_px:
+                                text = test_t
+                                found_fit = True
+                                break
+                    if not found_fit:
+                        text = "..."
+                        _, font_obj = _check_fit(text, font_size_px)
         else:
             font_obj = None
             for fp in font_candidates:
@@ -196,29 +216,52 @@ def render_text_layer_pango(
     ]
     all_families = ", ".join([custom_family] + fallback_families) if custom_family else ", ".join(fallback_families)
     
-    layout.set_text(text, -1)
-
-    # Auto-fit binary search
+    # Auto-fit with 10% step shrink and ellipsis truncation at 12pt floor
     if fit_mode == "auto_fit":
-        low, high = 10, 120
-        best_size = 10
-        while low <= high:
-            mid = (low + high) // 2
-            font_desc = Pango.FontDescription()
-            font_desc.set_absolute_size(mid * Pango.SCALE)
-            font_desc.set_weight(Pango.Weight.BOLD if font_weight == 'bold' else Pango.Weight.NORMAL)
-            font_desc.set_family(all_families)
-            layout.set_font_description(font_desc)
-            
+        def _check_fit(test_text, size_px):
+            layout.set_text(test_text, -1)
+            fd = Pango.FontDescription()
+            fd.set_absolute_size(size_px * Pango.SCALE)
+            fd.set_weight(Pango.Weight.BOLD if font_weight == 'bold' else Pango.Weight.NORMAL)
+            fd.set_family(all_families)
+            layout.set_font_description(fd)
             layout.set_width(layer_width_px * Pango.SCALE)
-            tw, th = layout.get_pixel_size()
+            return layout.get_pixel_size()
             
-            if tw <= layer_width_px and th <= layer_height_px:
-                best_size = mid
-                low = mid + 1
-            else:
-                high = mid - 1
-        font_size_px = best_size
+        tw, th = _check_fit(text, font_size_px)
+        while (tw > layer_width_px or th > layer_height_px) and font_size_px > 12:
+            next_size = int(font_size_px * 0.9)
+            if next_size <= 12:
+                font_size_px = 12
+                tw, th = _check_fit(text, font_size_px)
+                break
+            font_size_px = next_size
+            tw, th = _check_fit(text, font_size_px)
+            
+        if (tw > layer_width_px or th > layer_height_px) and font_size_px <= 12:
+            logger.warning(f"Ellipsis truncation triggered for Prompt Studio text. Text was too long even at {font_size_px}px floor: '{text}'")
+            words = text.split()
+            found_fit = False
+            if words:
+                for i in range(len(words) - 1, -1, -1):
+                    test_t = " ".join(words[:i+1]) + "..."
+                    tw, th = _check_fit(test_t, font_size_px)
+                    if tw <= layer_width_px and th <= layer_height_px:
+                        text = test_t
+                        found_fit = True
+                        break
+                if not found_fit:
+                    first = words[0]
+                    for i in range(len(first) - 1, 0, -1):
+                        test_t = first[:i] + "..."
+                        tw, th = _check_fit(test_t, font_size_px)
+                        if tw <= layer_width_px and th <= layer_height_px:
+                            text = test_t
+                            found_fit = True
+                            break
+                if not found_fit:
+                    text = "..."
+                    _check_fit(text, font_size_px)
 
     font_desc = Pango.FontDescription()
     font_desc.set_absolute_size(font_size_px * Pango.SCALE)
@@ -226,6 +269,7 @@ def render_text_layer_pango(
     font_desc.set_family(all_families)
     layout.set_font_description(font_desc)
     layout.set_width(layer_width_px * Pango.SCALE)
+    layout.set_text(text, -1)
     
     ink_rect, logical_rect = layout.get_pixel_extents()
     text_width, text_height = logical_rect.width, logical_rect.height
@@ -736,6 +780,62 @@ def _assemble_manual_template_preview(
                 except (TypeError, ValueError):
                     pass
             base = _composite_layer_onto_base(base, divider_img, 0, 0, canvas_w, canvas_h, rotation, opacity=layer_opacity)
+        elif layer_type in ("icon", "emoji"):
+            description = str(layer.get("description") or "star")
+            res = resolve_resource(asset_type=layer_type, description=description)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            color_hex = str(_first_option(layer.get("color_options") or [], "color_hex") or "#ffffff")
+            img = rasterize_icon(resolved_id, w, h, color=color_hex)
+            layer_opacity = 100.0
+            if layer.get("opacity") is not None:
+                try:
+                    layer_opacity = float(layer["opacity"])
+                except:
+                    pass
+            if img:
+                base = _composite_layer_onto_base(base, img, x, y, w, h, rotation, opacity=layer_opacity)
+        elif layer_type == "badge":
+            badge_text = str(layer.get("badge_text") or "Badge")
+            badge_icon_desc = str(layer.get("badge_icon") or "star")
+            res = resolve_resource(asset_type="icon", description=badge_icon_desc)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            from PIL import ImageDraw
+            shape_type = str(layer.get("shape_type") or "pill").lower()
+            fill_hex = str(_first_option(layer.get("fill_color_options") or [], "color_hex") or "#ffffff")
+            fr, fg, fb, _ = _parse_hex_color(fill_hex, default=(255, 255, 255, 255))
+            aa_scale = 4
+            big_w, big_h = w * aa_scale, h * aa_scale
+            big_img = Image.new("RGBA", (big_w, big_h), (0, 0, 0, 0))
+            big_draw = ImageDraw.Draw(big_img)
+            if shape_type == "pill":
+                big_draw.rounded_rectangle([0, 0, big_w - 1, big_h - 1], radius=min(big_w, big_h) // 2, fill=(fr, fg, fb, 255))
+            else:
+                cr = int(layer.get("corner_radius") or 0) * aa_scale
+                if cr > 0:
+                    big_draw.rounded_rectangle([0, 0, big_w - 1, big_h - 1], radius=cr, fill=(fr, fg, fb, 255))
+                else:
+                    big_draw.rectangle([0, 0, big_w - 1, big_h - 1], fill=(fr, fg, fb, 255))
+            shape_img = big_img.resize((w, h), Image.Resampling.LANCZOS)
+            
+            icon_color = str(_first_option(layer.get("icon_color_options") or [], "color_hex") or "#000000")
+            icon_size = int(h * 0.6)
+            icon_img = rasterize_icon(resolved_id, icon_size, icon_size, color=icon_color)
+            if icon_img:
+                ix = int(w * 0.1)
+                iy = (h - icon_size) // 2
+                shape_img.paste(icon_img, (ix, iy), icon_img)
+                
+            layer_opacity = 100.0
+            if layer.get("opacity") is not None:
+                try:
+                    layer_opacity = float(layer["opacity"])
+                except:
+                    pass
+            base = _composite_layer_onto_base(base, shape_img, x, y, w, h, rotation, opacity=layer_opacity)
         elif layer_type == "text":
             role = str(layer.get("role") or "body").lower()
             text_str = _PLACEHOLDER_BY_ROLE.get(role, _PLACEHOLDER_BY_ROLE["body"])
@@ -948,6 +1048,124 @@ def _merge_llm_instructions_with_overrides(
                 target[key] = override[key]
     return merged
 
+import copy
+
+def _apply_composition_validation(
+    template_json: dict,
+    instructions: dict,
+    background_img: Image.Image,
+    canvas_w: int,
+    canvas_h: int,
+    font_assets: dict
+) -> tuple[dict, dict]:
+    from app.services.composition_validator import (
+        run_contrast_check,
+        run_text_fit_check,
+        run_safe_zone_check,
+        run_overlap_check
+    )
+    
+    t_json = copy.deepcopy(template_json)
+    instr = copy.deepcopy(instructions)
+    
+    bg_color = "#ffffff"
+    try:
+        if background_img:
+            r, g, b = background_img.convert("RGB").resize((1, 1)).getpixel((0, 0))
+            bg_color = f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        pass
+        
+    overlay_opacity = 0.35
+    overlay_color = "#000000"
+    
+    element_to_instr = []
+    elements = []
+    layer_map = {str(layer.get("id")): layer for layer in t_json.get("layers", [])}
+    
+    for layer in t_json.get("layers", []):
+        layer_id = str(layer.get("id"))
+        layer_type = str(layer.get("type", "")).lower()
+        
+        i_layer = next((i for i in instr.get("layers", []) if str(i.get("layer_id")) == layer_id), {})
+        
+        if layer_type == "overlay":
+            try:
+                overlay_opacity = float(i_layer.get("opacity") if i_layer.get("opacity") is not None else layer.get("color_options", [{}])[0].get("opacity", 0.35))
+                overlay_color = str(i_layer.get("color_hex") or layer.get("color_options", [{}])[0].get("color_hex") or "#000000")
+            except Exception:
+                pass
+            continue
+            
+        x = _pct(float(layer.get("position_x_percent") or 0), canvas_w)
+        y = _pct(float(layer.get("position_y_percent") or 0), canvas_h)
+        w = _pct(float(layer.get("width_percent") or 100), canvas_w)
+        h = _pct(float(layer.get("height_percent") or 100), canvas_h)
+        
+        el_type = "shape" if layer_type in ("icon", "emoji", "badge", "shape") else layer_type
+        
+        el = {
+            "id": layer_id,
+            "type": el_type,
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "role": str(layer.get("role", "")),
+        }
+        
+        if el_type == "text":
+            el["content"] = str(i_layer.get("text") or layer.get("text") or "")
+            el["color"] = str(i_layer.get("color_hex") or layer.get("text_color_hex") or "#ffffff")
+            
+            min_pct = float(layer.get("font_size_min_percent") or 4.0)
+            max_pct = float(layer.get("font_size_max_percent") or 7.0)
+            fs_pct = i_layer.get("font_size_percent")
+            if fs_pct is None:
+                fs_pct = (min_pct + max_pct) / 2.0
+            else:
+                fs_pct = float(fs_pct)
+            el["font_size"] = max(10, int(round(fs_pct * canvas_h / 100.0)))
+            
+            font_id = str(i_layer.get("font_asset_id") or "")
+            font_asset = font_assets.get(font_id)
+            weight = str(layer.get("font_weight") or (font_asset.weight if font_asset else "regular"))
+            
+            # Use actual resolved local font path for composition validator
+            _, _, font_path_used = _get_font_for_text(el["content"], font_asset, weight, el["font_size"])
+            el["font_name"] = font_path_used
+            
+        elements.append(el)
+        element_to_instr.append((el, i_layer, layer))
+        
+    run_overlap_check(elements)
+    run_safe_zone_check(elements, canvas_w, canvas_h)
+    run_text_fit_check(elements)
+    
+    # We must patch text layers before contrast check so text color swaps use correct font info?
+    # No, contrast check just uses text color and background color
+    new_overlay_opacity = run_contrast_check(elements, background_color=bg_color, overlay_opacity=overlay_opacity, overlay_color=overlay_color)
+    
+    for el, i_layer, layer in element_to_instr:
+        if el["type"] == "text":
+            i_layer["text"] = el["content"]
+            i_layer["color_hex"] = el["color"]
+            i_layer["font_size_percent"] = (el["font_size"] / canvas_h) * 100.0
+            
+            layer["position_x_percent"] = (el["x"] / canvas_w) * 100.0
+            layer["position_y_percent"] = (el["y"] / canvas_h) * 100.0
+            layer["width_percent"] = (el["w"] / canvas_w) * 100.0
+            layer["height_percent"] = (el["h"] / canvas_h) * 100.0
+        elif el["type"] == "shape":
+            layer["position_x_percent"] = (el["x"] / canvas_w) * 100.0
+            layer["position_y_percent"] = (el["y"] / canvas_h) * 100.0
+            
+    for i_layer in instr.get("layers", []):
+        if i_layer.get("layer_id") and layer_map.get(str(i_layer["layer_id"]), {}).get("type") == "overlay":
+            i_layer["opacity"] = new_overlay_opacity
+            
+    return t_json, instr
+
 def _image_to_png_bytes(image: Image.Image) -> bytes:
     out = io.BytesIO()
     image.convert("RGB").save(out, format="PNG")
@@ -988,6 +1206,14 @@ def _assemble_from_llm_instructions(
     canvas_h = int(template_json.get("canvas_height") or 1024)
     base = background.convert("RGBA").resize((canvas_w, canvas_h), Image.Resampling.LANCZOS)
     logo_img = Image.open(io.BytesIO(logo_bytes)).convert("RGBA") if logo_bytes else None
+
+    template_json, instructions = _apply_composition_validation(
+        template_json, instructions, base, canvas_w, canvas_h, font_assets
+    )
+    
+    layer_map = {
+        str(item.get("layer_id")): item for item in instructions.get("layers") or [] if item.get("layer_id")
+    }
 
     layers = sorted(template_json.get("layers") or [], key=lambda layer: int(layer.get("z_index") or 0))
     for layer in layers:
@@ -1114,6 +1340,50 @@ def _assemble_from_llm_instructions(
             
             divider_img = big_img.resize((canvas_w, canvas_h), Image.Resampling.LANCZOS)
             base = _composite_layer_onto_base(base, divider_img, 0, 0, canvas_w, canvas_h, rotation, opacity=layer_opacity)
+        elif layer_type in ("icon", "emoji"):
+            description = str(instr.get("description") or layer.get("description") or "star")
+            res = resolve_resource(asset_type=layer_type, description=description)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            color_hex = str(instr.get("color_hex") or _first_option(layer.get("color_options") or [], "color_hex") or "#ffffff")
+            img = rasterize_icon(resolved_id, w, h, color=color_hex)
+            if img:
+                base = _composite_layer_onto_base(base, img, x, y, w, h, rotation, opacity=layer_opacity)
+        elif layer_type == "badge":
+            badge_text = str(instr.get("badge_text") or layer.get("badge_text") or "Badge")
+            badge_icon_desc = str(instr.get("badge_icon") or layer.get("badge_icon") or "star")
+            res = resolve_resource(asset_type="icon", description=badge_icon_desc)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            from PIL import ImageDraw
+            shape_type = str(layer.get("shape_type") or "pill").lower()
+            fill_hex = str(instr.get("fill_color_hex") or _first_option(layer.get("fill_color_options") or [], "color_hex") or "#ffffff")
+            fr, fg, fb, _ = _parse_hex_color(fill_hex, default=(255, 255, 255, 255))
+            aa_scale = 4
+            big_w, big_h = w * aa_scale, h * aa_scale
+            big_img = Image.new("RGBA", (big_w, big_h), (0, 0, 0, 0))
+            big_draw = ImageDraw.Draw(big_img)
+            if shape_type == "pill":
+                big_draw.rounded_rectangle([0, 0, big_w - 1, big_h - 1], radius=min(big_w, big_h) // 2, fill=(fr, fg, fb, 255))
+            else:
+                cr = int(layer.get("corner_radius") or 0) * aa_scale
+                if cr > 0:
+                    big_draw.rounded_rectangle([0, 0, big_w - 1, big_h - 1], radius=cr, fill=(fr, fg, fb, 255))
+                else:
+                    big_draw.rectangle([0, 0, big_w - 1, big_h - 1], fill=(fr, fg, fb, 255))
+            shape_img = big_img.resize((w, h), Image.Resampling.LANCZOS)
+            
+            icon_color = str(instr.get("icon_color_hex") or _first_option(layer.get("icon_color_options") or [], "color_hex") or "#000000")
+            icon_size = int(h * 0.6)
+            icon_img = rasterize_icon(resolved_id, icon_size, icon_size, color=icon_color)
+            if icon_img:
+                ix = int(w * 0.1)
+                iy = (h - icon_size) // 2
+                shape_img.paste(icon_img, (ix, iy), icon_img)
+            
+            base = _composite_layer_onto_base(base, shape_img, x, y, w, h, rotation, opacity=layer_opacity)
         elif layer_type == "text":
             text_str = str(instr.get("text") or "").strip()
             if not text_str:
@@ -1132,6 +1402,10 @@ def _assemble_from_llm_instructions(
             color_hex = str(instr.get("color_hex") or "#ffffff")
             align = str(instr.get("text_align") or "center").strip().lower()
             
+            # Contrast Check is now handled by _apply_composition_validation
+            # which patches the safe font_size_percent, color_hex, and text back into instr.
+            # We can directly use color_hex and the updated text_str here!
+            
             text_layer = render_text_layer_pango(
                 text=text_str,
                 font_path=font_path_used,
@@ -1140,7 +1414,8 @@ def _assemble_from_llm_instructions(
                 layer_width_px=w,
                 layer_height_px=h,
                 text_align=align,
-                font_weight=weight
+                font_weight=weight,
+                fit_mode="fixed"
             )
             logger.info(
                 'Text layer %s: script=%s font=%s size=%spx text="%s"',
@@ -1271,7 +1546,8 @@ def _assemble_from_llm_instructions(
                 layer_width_px=w - start_x - inner_h - gap,
                 layer_height_px=inner_h,
                 text_align="left",
-                font_weight=weight
+                font_weight=weight,
+                fit_mode="auto_fit"
             )
             badge_img.paste(text_layer, (start_x + inner_h + gap, padding), mask=text_layer)
             
@@ -1370,6 +1646,50 @@ def _assemble_template_image(
             img_box = _fit_within(logo_img, w, h)
             layer_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
             layer_canvas.paste(img_box, (x, y), img_box)
+            base = Image.alpha_composite(base, layer_canvas)
+        elif layer_type in ("icon", "emoji"):
+            description = str(layer.get("content") or layer.get("description") or "star")
+            res = resolve_resource(asset_type=layer_type, description=description)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            color_hex = str(layer.get("text_color_hex") or layer.get("color_hex") or "#ffffff")
+            img = rasterize_icon(resolved_id, w, h, color=color_hex)
+            if img:
+                layer_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+                layer_canvas.paste(img, (x, y), img)
+                base = Image.alpha_composite(base, layer_canvas)
+        elif layer_type == "badge":
+            badge_text = str(layer.get("badge_text") or layer.get("content") or "Badge")
+            badge_icon_desc = str(layer.get("badge_icon") or "star")
+            res = resolve_resource(asset_type="icon", description=badge_icon_desc)
+            resolved_id = res.get("resolved")
+            if not resolved_id:
+                continue
+            from PIL import ImageDraw
+            shape_type = str(layer.get("shape_type") or "pill").lower()
+            fill_hex = str(layer.get("fill_color_hex") or "#ffffff")
+            fr, fg, fb, _ = _parse_hex_color(fill_hex, default=(255, 255, 255, 255))
+            aa_scale = 4
+            big_w, big_h = w * aa_scale, h * aa_scale
+            big_img = Image.new("RGBA", (big_w, big_h), (0, 0, 0, 0))
+            big_draw = ImageDraw.Draw(big_img)
+            if shape_type == "pill":
+                big_draw.rounded_rectangle([0, 0, big_w - 1, big_h - 1], radius=min(big_w, big_h) // 2, fill=(fr, fg, fb, 255))
+            else:
+                big_draw.rectangle([0, 0, big_w - 1, big_h - 1], fill=(fr, fg, fb, 255))
+            shape_img = big_img.resize((w, h), Image.Resampling.LANCZOS)
+            
+            icon_color = str(layer.get("icon_color_hex") or "#000000")
+            icon_size = int(h * 0.6)
+            icon_img = rasterize_icon(resolved_id, icon_size, icon_size, color=icon_color)
+            if icon_img:
+                ix = int(w * 0.1)
+                iy = (h - icon_size) // 2
+                shape_img.paste(icon_img, (ix, iy), icon_img)
+                
+            layer_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+            layer_canvas.paste(shape_img, (x, y), shape_img)
             base = Image.alpha_composite(base, layer_canvas)
         elif layer_type == "text":
             text_str = text_map.get(layer_index, "")
