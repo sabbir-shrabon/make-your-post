@@ -31,11 +31,15 @@ import {
   User,
   Cpu,
   Bookmark,
+  LogOut,
+  Plug,
+  CheckCircle2,
 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { PageConnection, GlobalModelSettings } from "@/types/models"
-import { PageConnectionCard, PageTitle } from "@/components/dashboard/shared/dashboard-ui"
+import { PageConnectionCard, PageTitle, FacebookConnectButton } from "@/components/dashboard/shared/dashboard-ui"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -75,13 +79,72 @@ export function SettingsView({
   timezone: string
   onChanged: () => void
 }) {
-  const { user } = useAuth()
+  const router = useRouter()
+  const { user, logout } = useAuth()
   const [activeTab, setActiveTab] = useState<"general" | "ai-models" | "typography">("general")
   const [email, setEmail] = useState(user?.email || "")
   const [tz, setTz] = useState(timezone)
   const [manualPageId, setManualPageId] = useState("")
   const [manualToken, setManualToken] = useState("")
   const [syncingPageId, setSyncingPageId] = useState<number | null>(null)
+
+  // Multi-page discovered selection state
+  const [discoveredModalOpen, setDiscoveredModalOpen] = useState(false)
+  const [discoveredPages, setDiscoveredPages] = useState<{ page_id: string; page_name: string; picture_url?: string; is_already_connected?: boolean }[]>([])
+  const [selectedBatchPageIds, setSelectedBatchPageIds] = useState<string[]>([])
+  const [isConnectingBatch, setIsConnectingBatch] = useState(false)
+
+  async function handleLogout() {
+    if (window.confirm("Are you sure you want to log out of your account?")) {
+      logout()
+      toast.success("Logged out successfully.")
+      router.push("/login")
+    }
+  }
+
+  async function fetchPendingDiscoveredPages() {
+    try {
+      const res = await api.get<{ pages: { page_id: string; page_name: string; picture_url?: string; is_already_connected?: boolean }[] }>("/facebook/pending-pages")
+      if (res.data.pages && res.data.pages.length > 0) {
+        setDiscoveredPages(res.data.pages)
+        // By default, select all not yet connected
+        const notConnected = res.data.pages.filter(p => !p.is_already_connected).map(p => p.page_id)
+        setSelectedBatchPageIds(notConnected.length > 0 ? notConnected : res.data.pages.map(p => p.page_id))
+        setDiscoveredModalOpen(true)
+      } else {
+        toast.info("No pending Facebook pages found. Connect with Facebook to discover pages.")
+      }
+    } catch {
+      toast.error("Could not fetch available Facebook pages.")
+    }
+  }
+
+  function handleOAuthRequiresSelection(discoveredList: any[]) {
+    setDiscoveredPages(discoveredList)
+    setSelectedBatchPageIds(discoveredList.map((p) => p.page_id))
+    setDiscoveredModalOpen(true)
+    onChanged()
+  }
+
+  async function connectSelectedBatchPages() {
+    if (selectedBatchPageIds.length === 0) {
+      toast.error("Please select at least one page to connect.")
+      return
+    }
+    setIsConnectingBatch(true)
+    try {
+      const res = await api.post<{ success: boolean; connected_pages: string[] }>("/facebook/select-pages", {
+        page_ids: selectedBatchPageIds,
+      })
+      toast.success(`Successfully connected ${res.data.connected_pages.length} Facebook page(s).`)
+      setDiscoveredModalOpen(false)
+      onChanged()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Could not connect selected pages.")
+    } finally {
+      setIsConnectingBatch(false)
+    }
+  }
 
   async function saveAccount() {
     try {
@@ -112,7 +175,7 @@ export function SettingsView({
   }
 
   async function disconnect(id: number) {
-    if (!window.confirm("Are you sure? Your post history will be preserved.")) return
+    if (!window.confirm("Are you sure you want to disconnect this page? Scheduled posts will be paused.")) return
     try {
       const response = await api.delete<{ success: boolean; message: string; paused_posts: number }>(
         `/api/pages/${id}/disconnect`
@@ -121,6 +184,29 @@ export function SettingsView({
       onChanged()
     } catch (e: any) {
       toast.error(e?.response?.data?.detail || "Could not disconnect page.")
+    }
+  }
+
+  async function reconnect(id: number) {
+    try {
+      const response = await api.post<{ success: boolean; page_name: string }>(
+        `/facebook/pages/${id}/reconnect`
+      )
+      toast.success(`Reconnected ${response.data.page_name || "page"}. Scheduled posts resumed.`)
+      onChanged()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Could not reconnect page. Please try connecting via Facebook.")
+    }
+  }
+
+  async function deleteConnection(id: number) {
+    if (!window.confirm("Are you sure you want to permanently remove this page from your dashboard?")) return
+    try {
+      await api.delete(`/api/pages/${id}`)
+      toast.success("Page connection removed.")
+      onChanged()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Could not remove page connection.")
     }
   }
 
@@ -168,16 +254,27 @@ export function SettingsView({
       {/* --- TAB 1: GENERAL & PAGES --- */}
       {activeTab === "general" && (
         <div className="grid gap-6">
-          {/* Account Profile */}
+          {/* Account Profile & Security */}
           <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <User className="size-4 text-blue-600" />
-                Account Profile & Timezone
-              </CardTitle>
-              <CardDescription className="text-xs text-slate-500">
-                Manage your credentials and local publishing timezone.
-              </CardDescription>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold leading-5 text-slate-900 flex items-center gap-2">
+                  <User className="size-4 text-blue-600" />
+                  Account Profile & Session
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Manage your profile credentials, timezone, and active login session.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 gap-1.5"
+              >
+                <LogOut className="size-3.5" />
+                Log Out
+              </Button>
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-1.5">
@@ -196,7 +293,11 @@ export function SettingsView({
                   className="h-9 text-sm"
                 />
               </div>
-              <div className="sm:col-span-2 flex justify-end pt-1">
+              <div className="sm:col-span-2 flex items-center justify-between pt-2 border-t border-slate-100">
+                <div className="text-xs text-slate-500 flex items-center gap-2">
+                  <span className="size-2 rounded-full bg-emerald-500 inline-block" />
+                  Signed in as <strong className="text-slate-800">{user?.name || user?.email}</strong>
+                </div>
                 <Button className="bg-blue-700 hover:bg-blue-800 text-white text-xs h-8" onClick={saveAccount}>
                   Save Profile Settings
                 </Button>
@@ -206,31 +307,71 @@ export function SettingsView({
 
           {/* Connected Facebook Pages */}
           <Card className="border-slate-200 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Globe className="size-4 text-blue-600" />
-                Connected Social Pages ({pages.length})
-              </CardTitle>
-              <CardDescription className="text-xs text-slate-500">
-                Connected Facebook Pages receiving scheduled and manual posts.
-              </CardDescription>
+            <CardHeader className="pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <CardTitle className="text-base font-semibold leading-5 text-slate-900 flex items-center gap-2">
+                  <Globe className="size-4 text-blue-600" />
+                  Connected Social Pages ({pages.length})
+                </CardTitle>
+                <CardDescription className="text-xs text-slate-500">
+                  Manage multiple Facebook Pages under your account for automated or manual publishing.
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchPendingDiscoveredPages}
+                  className="text-xs h-8 gap-1.5 text-slate-700"
+                >
+                  <Layers className="size-3.5" />
+                  Discovered Pages
+                </Button>
+                <FacebookConnectButton
+                  onConnected={onChanged}
+                  onRequiresSelection={handleOAuthRequiresSelection}
+                  className="h-8 text-xs font-semibold"
+                  label="Connect Facebook Account"
+                />
+              </div>
             </CardHeader>
             <CardContent className="grid gap-4">
-              {pages.map((page) => (
-                <PageConnectionCard
-                  key={page.id}
-                  page={page}
-                  isSyncing={syncingPageId === page.id}
-                  onSyncHistory={() => syncHistory(page.id)}
-                  onDisconnect={() => disconnect(page.id)}
-                  onChanged={onChanged}
-                />
-              ))}
+              {pages.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center bg-slate-50/50">
+                  <Globe className="mx-auto size-8 text-slate-400 mb-2" />
+                  <p className="text-sm font-semibold text-slate-800">No Facebook Pages Connected</p>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+                    Connect your Facebook account to manage, schedule, and publish posts to one or more Facebook Pages.
+                  </p>
+                  <FacebookConnectButton
+                    onConnected={onChanged}
+                    onRequiresSelection={handleOAuthRequiresSelection}
+                    className="mx-auto text-xs"
+                    label="Connect Facebook Now"
+                  />
+                </div>
+              ) : (
+                pages.map((page) => (
+                  <PageConnectionCard
+                    key={page.id}
+                    page={page}
+                    isSyncing={syncingPageId === page.id}
+                    onSyncHistory={() => syncHistory(page.id)}
+                    onDisconnect={() => disconnect(page.id)}
+                    onReconnect={() => reconnect(page.id)}
+                    onDelete={() => deleteConnection(page.id)}
+                    onChanged={onChanged}
+                  />
+                ))
+              )}
 
               {/* Manual Connection Option */}
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50/60 space-y-3">
+              <div className="rounded-xl border border-dashed border-slate-300 p-4 bg-slate-50/60 space-y-3 mt-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800">Manual Facebook Page Connection</span>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800">Manual Facebook Page Connection</span>
+                    <p className="text-[11px] text-slate-500">Direct Page ID and Token input (supports connecting multiple distinct pages).</p>
+                  </div>
                   <Badge variant="outline" className="text-[10px] text-slate-500">Developer / Direct Token</Badge>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -259,6 +400,130 @@ export function SettingsView({
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* --- MULTI-PAGE SELECTION MODAL --- */}
+      {discoveredModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in-0">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Globe className="size-4 text-blue-600" />
+                  Select Facebook Pages to Connect
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Choose which pages from your Facebook account you want active on PagePilot.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDiscoveredModalOpen(false)}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100 text-xs text-slate-500">
+                <span>Discovered Pages ({discoveredPages.length})</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedBatchPageIds.length === discoveredPages.length) {
+                      setSelectedBatchPageIds([])
+                    } else {
+                      setSelectedBatchPageIds(discoveredPages.map(p => p.page_id))
+                    }
+                  }}
+                  className="text-blue-600 hover:underline font-semibold"
+                >
+                  {selectedBatchPageIds.length === discoveredPages.length ? "Deselect All" : "Select All"}
+                </button>
+              </div>
+
+              {discoveredPages.map((page) => {
+                const isSelected = selectedBatchPageIds.includes(page.page_id)
+                return (
+                  <div
+                    key={page.page_id}
+                    onClick={() => {
+                      setSelectedBatchPageIds((prev) =>
+                        prev.includes(page.page_id)
+                          ? prev.filter((id) => id !== page.page_id)
+                          : [...prev, page.page_id]
+                      )
+                    }}
+                    className={cn(
+                      "flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all",
+                      isSelected
+                        ? "border-blue-500 bg-blue-50/50 shadow-sm"
+                        : "border-slate-200 hover:bg-slate-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "size-4 rounded border flex items-center justify-center transition-colors",
+                        isSelected ? "bg-blue-600 border-blue-600 text-white" : "border-slate-300 bg-white"
+                      )}>
+                        {isSelected && <Check className="size-3 stroke-[3]" />}
+                      </div>
+                      <img
+                        src={page.picture_url || `https://graph.facebook.com/${page.page_id}/picture?type=large`}
+                        alt=""
+                        className="size-9 rounded-full bg-slate-100 border border-slate-200 object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = "none"
+                        }}
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{page.page_name}</p>
+                        <p className="text-[10px] text-slate-400 font-mono">ID: {page.page_id}</p>
+                      </div>
+                    </div>
+                    {page.is_already_connected && (
+                      <Badge variant="secondary" className="text-[10px] bg-slate-100 text-slate-600">
+                        Connected
+                      </Badge>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-xs text-slate-500">
+                {selectedBatchPageIds.length} page(s) selected
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setDiscoveredModalOpen(false)}
+                  className="text-xs h-8"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={connectSelectedBatchPages}
+                  disabled={isConnectingBatch || selectedBatchPageIds.length === 0}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-8 font-semibold"
+                >
+                  {isConnectingBatch ? (
+                    <>
+                      <Loader2 className="size-3.5 mr-1.5 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    `Connect Selected (${selectedBatchPageIds.length})`
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -394,7 +659,7 @@ function TypographySettingsCard({ pages }: { pages: PageConnection[] }) {
       <Card className="border-purple-200/80 bg-linear-to-br from-white via-purple-50/20 to-slate-50 shadow-sm">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CardTitle className="text-base font-semibold leading-5 text-slate-900 flex items-center gap-2">
               <Type className="size-5 text-purple-600" />
               Typography & Custom Fonts Studio
             </CardTitle>
@@ -515,7 +780,7 @@ function TypographySettingsCard({ pages }: { pages: PageConnection[] }) {
       <Card className="border-slate-200 shadow-sm">
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <div>
-            <CardTitle className="text-base font-bold text-slate-900">
+            <CardTitle className="text-base font-semibold leading-5 text-slate-900">
               Installed Fonts Directory ({installedFonts.length})
             </CardTitle>
             <CardDescription className="text-xs text-slate-500">
@@ -601,7 +866,7 @@ function TypographySettingsCard({ pages }: { pages: PageConnection[] }) {
       {fontPairs.length > 0 && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+            <CardTitle className="text-base font-semibold leading-5 text-slate-900 flex items-center gap-2">
               <Bookmark className="size-4 text-purple-600" />
               Pre-Configured Font Pairings ({fontPairs.length})
             </CardTitle>
@@ -742,7 +1007,7 @@ function AIModelsSettingsCard() {
   return (
     <Card className="border-slate-200 shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+        <CardTitle className="text-base font-semibold leading-5 text-slate-900 flex items-center gap-2">
           <Cpu className="size-4 text-blue-600" />
           AI Generation Engines & Model Selection
         </CardTitle>

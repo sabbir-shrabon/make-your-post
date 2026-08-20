@@ -114,9 +114,8 @@ axiosInstance.interceptors.response.use(
     }
 
     // Handle 401 Unauthorized — token expired or invalid
-    // Only redirect to login if we are NOT already on an auth page.
-    // This prevents the interceptor from swallowing 401 errors on /login
-    // (wrong-password) before the login form's catch block can show them.
+    // Only redirect to login if we are NOT already on an auth page,
+    // and dispatch a custom event so UI can prompt re-auth if needed.
     if (isAxiosError(error) && error.response?.status === 401) {
       if (typeof window !== "undefined") {
         const onAuthPage =
@@ -124,9 +123,12 @@ axiosInstance.interceptors.response.use(
           window.location.pathname === "/register" ||
           window.location.pathname.startsWith("/auth")
         if (!onAuthPage) {
-          window.localStorage.removeItem(TOKEN_STORAGE_KEY)
-          delete axiosInstance.defaults.headers.common["Authorization"]
-          window.location.href = "/login"
+          window.dispatchEvent(new CustomEvent("auth-session-expired"))
+          // Only redirect if explicitly on a protected root or token is completely absent
+          const currentToken = window.localStorage.getItem(TOKEN_STORAGE_KEY)
+          if (!currentToken) {
+            window.location.href = "/login"
+          }
         }
       }
     }

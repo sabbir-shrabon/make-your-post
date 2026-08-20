@@ -102,8 +102,8 @@ export function PageTrackerView({
       <Sheet open={!!addingPostsFor} onOpenChange={(open) => !open && setAddingPostsFor(null)}>
         <SheetContent className="overflow-y-auto w-full max-w-md">
           <div className="grid gap-4 mt-6">
-            <h2 className="text-lg font-semibold">Add Posts to {addingPostsFor?.nickname}</h2>
-            <p className="text-sm text-slate-500">Paste recent posts from this page. Separate multiple posts by double newlines.</p>
+            <h2 className="text-base font-semibold leading-5">Add Posts to {addingPostsFor?.nickname}</h2>
+            <p className="text-xs font-normal leading-4 text-slate-500">Paste recent posts from this page. Separate multiple posts by double newlines.</p>
             <Textarea className="min-h-64" value={manualPosts} onChange={(e) => setManualPosts(e.target.value)} placeholder="Post 1 content...&#10;&#10;Post 2 content..." />
             <Button onClick={submitManualPosts} disabled={loading}>
               {loading ? <Loader2 className="size-4 animate-spin mr-2" /> : null} Save Posts

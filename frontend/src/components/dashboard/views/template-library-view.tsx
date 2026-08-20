@@ -22,6 +22,7 @@ import {
   Check,
   ChevronRight,
   Info,
+  Pencil,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -37,7 +38,7 @@ import {
   TemplatePosterDemoCard, 
   type PosterTemplateItem 
 } from "@/components/dashboard/templates/template-poster-demo-card"
-import { VisualSlotBuilderModal } from "@/components/dashboard/templates/visual-slot-builder-modal"
+import { CanvaVisualBuilderModal } from "@/components/dashboard/templates/canva-visual-builder-modal"
 
 const CATEGORIES = [
   "All",
@@ -53,16 +54,27 @@ const CATEGORIES = [
 
 export function TemplateLibraryView() {
   const router = useRouter()
-  const [activeMainTab, setActiveMainTab] = useState<"library" | "lab">("library")
+  const [activeMainTab, setActiveMainTab] = useState<"poster" | "meme">("poster")
   const [templates, setTemplates] = useState<PosterTemplateItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   
-  // Custom Visual Canvas Builder Modal
+  // Custom Canva Visual Canvas Builder Modal
   const [isBuilderModalOpen, setIsBuilderModalOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<PosterTemplateItem | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  function handleOpenCreate() {
+    setEditingTemplate(null)
+    setIsBuilderModalOpen(true)
+  }
+
+  function handleEditTemplate(tpl: PosterTemplateItem) {
+    setEditingTemplate(tpl)
+    setIsBuilderModalOpen(true)
+  }
 
   const fetchTemplates = React.useCallback(async () => {
     setLoading(true)
@@ -101,7 +113,7 @@ export function TemplateLibraryView() {
   // Action: Launch template in Poster Lab
   function handleUseInLab(tpl: PosterTemplateItem) {
     sessionStorage.setItem("poster_lab_selected_template", tpl.id)
-    setActiveMainTab("lab")
+    router.push("/dashboard/poster-studio")
     toast.success(`Selected "${tpl.name}" — Launching Poster Lab!`)
   }
 
@@ -147,20 +159,20 @@ export function TemplateLibraryView() {
         
         <div className="flex items-center gap-2 shrink-0">
           <TabsList className="bg-slate-100 p-1">
-            <TabsTrigger value="library" className="data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-xs font-semibold">
+            <TabsTrigger value="poster" className="data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-xs font-semibold">
               <LayoutTemplate className="size-3.5 mr-1.5" />
-              Templates Catalog
+              Poster Templates
             </TabsTrigger>
-            <TabsTrigger value="lab" className="data-[state=active]:bg-purple-700 data-[state=active]:text-white data-[state=active]:shadow-sm text-xs font-semibold">
-              <FlaskConical className="size-3.5 mr-1.5" />
-              Agentic Poster Lab
+            <TabsTrigger value="meme" className="data-[state=active]:bg-white data-[state=active]:text-purple-700 data-[state=active]:shadow-sm text-xs font-semibold">
+              <LayoutTemplate className="size-3.5 mr-1.5" />
+              Meme Templates
             </TabsTrigger>
           </TabsList>
         </div>
       </div>
 
-      {/* --- TAB 1: TEMPLATE CATALOG & VISUAL BUILDER --- */}
-      <TabsContent value="library" className="m-0 focus-visible:outline-none space-y-6">
+      {/* --- TAB 1: POSTER TEMPLATES --- */}
+      <TabsContent value="poster" className="m-0 focus-visible:outline-none space-y-6">
         {/* Top Control Bar: Search, Category Filters, and Builder Trigger */}
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-sm space-y-4">
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -200,7 +212,7 @@ export function TemplateLibraryView() {
               <Button
                 size="sm"
                 className="h-10 text-xs font-bold gap-2 bg-purple-700 hover:bg-purple-800 text-white shadow-md transition-all hover:scale-[1.02]"
-                onClick={() => setIsBuilderModalOpen(true)}
+                onClick={handleOpenCreate}
               >
                 <Plus className="size-4" />
                 Create Manual Template
@@ -283,7 +295,7 @@ export function TemplateLibraryView() {
         ) : filteredTemplates.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/50 p-12 text-center flex flex-col items-center justify-center gap-3">
             <LayoutTemplate className="size-10 text-slate-300" />
-            <h4 className="font-bold text-slate-700 text-base">No templates found</h4>
+            <h4 className="font-semibold text-slate-700 text-base leading-5">No templates found</h4>
             <p className="text-xs text-slate-500 max-w-sm">
               No layout templates match your active search or filter. Try clearing filters or create a new custom template.
             </p>
@@ -307,6 +319,7 @@ export function TemplateLibraryView() {
                 key={tpl.id}
                 template={tpl}
                 onUseInLab={handleUseInLab}
+                onEdit={handleEditTemplate}
                 onDelete={handleDeleteTemplate}
               />
             ))}
@@ -327,7 +340,7 @@ export function TemplateLibraryView() {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="font-bold text-slate-900 text-sm">{tpl.name}</h4>
+                        <h4 className="font-semibold text-slate-900 text-sm leading-5">{tpl.name}</h4>
                         {tpl.is_system ? (
                           <Badge variant="outline" className="text-[10px] font-mono text-purple-700 bg-purple-50 border-purple-200">
                             Built-In
@@ -364,6 +377,18 @@ export function TemplateLibraryView() {
                     </Button>
                     {!tpl.is_system && (
                       <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs text-slate-700 border-slate-200 hover:bg-slate-50"
+                        onClick={() => handleEditTemplate(tpl)}
+                        title="Edit in Canvas Builder"
+                      >
+                        <Pencil className="size-3.5 mr-1" />
+                        Edit
+                      </Button>
+                    )}
+                    {!tpl.is_system && (
+                      <Button
                         variant="ghost"
                         size="sm"
                         className="h-8 px-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50"
@@ -380,16 +405,19 @@ export function TemplateLibraryView() {
         )}
       </TabsContent>
 
-      {/* --- TAB 2: AGENTIC POSTER LAB --- */}
-      <TabsContent value="lab" className="m-0 focus-visible:outline-none">
-        <AgenticPosterLab />
+      {/* --- TAB 2: MEME TEMPLATES --- */}
+      <TabsContent value="meme" className="m-0 focus-visible:outline-none">
+        <div className="py-16 text-center text-slate-500">
+          <p>Meme templates will be available here soon.</p>
+        </div>
       </TabsContent>
 
-      {/* Custom Template Canvas Builder Modal */}
-      <VisualSlotBuilderModal
+      {/* Custom Canva Visual Canvas Builder Modal */}
+      <CanvaVisualBuilderModal
         isOpen={isBuilderModalOpen}
         onClose={() => setIsBuilderModalOpen(false)}
         onSaved={fetchTemplates}
+        initialTemplate={editingTemplate}
       />
     </Tabs>
   )

@@ -36,7 +36,11 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1008
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 APP_BASE_URL = os.getenv("APP_BASE_URL", BACKEND_URL)
-CRON_SECRET = os.getenv("CRON_SECRET", "your_cron_secret_here")
+CRON_SECRET = (os.getenv("CRON_SECRET") or "").strip()
+if not CRON_SECRET or CRON_SECRET == "your_cron_secret_here":
+    import secrets
+    # Fallback to an ephemeral high-entropy random token so unconfigured environments cannot be brute-forced with placeholders
+    CRON_SECRET = secrets.token_hex(32)
 
 
 def _normalize_database_url(database_url: str) -> str:

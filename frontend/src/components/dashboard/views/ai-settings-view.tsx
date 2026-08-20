@@ -2,63 +2,33 @@
 
 import * as React from "react"
 import { useState, useEffect, useCallback } from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   Sparkles,
   Loader2,
-  Check,
   Plus,
   Trash2,
-  X,
-  RotateCcw,
-  Palette,
-  Type,
-  Globe,
-  Sliders,
-  ChevronDown,
-  ChevronUp,
-  LayoutTemplate,
-  Wand2,
+  Send,
   Calendar,
-  Layers,
-  Award,
+  Globe,
+  MoreHorizontal,
+  ThumbsUp,
+  MessageSquare,
+  Share2,
   Settings2,
+  RotateCcw,
+  Save,
+  Check,
+  Zap,
+  Target,
+  Sliders,
+  Laugh,
+  Layers,
+  Wand2,
+  BookOpen,
+  X,
 } from "lucide-react"
 import { toast } from "sonner"
-
-import {
-  templateNames,
-  goalOptions,
-  toneOptions,
-  languages,
-  dayOptions,
-  personaColors,
-  scheduleDayKeys,
-  dayFullToAbbrev,
-  PersonaScheduleData,
-  PageTitle,
-  PageMini,
-  formatDate,
-  scheduleDayLabel,
-  activeDaysToAbbrev,
-  scheduleFromLegacyPersona,
-  Empty,
-} from "@/components/dashboard/shared/dashboard-ui"
-import {
-  includeOptions,
-  neverOptions,
-  structureOptions,
-  llmProviderModels,
-  ModelPreference,
-  ModelProviderOption,
-  emptyPersona,
-  promptConfig,
-  buildSimplePrompt,
-  buildRawPrompt,
-  applyTemplate,
-} from "@/lib/persona-utils"
-import { PageConnection, AIPersona, PromptStudioConfig, PerformanceInsights } from "@/types/models"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -67,926 +37,951 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { useAuth } from "@/contexts/auth-context"
+import { PageConnection, AIPersona } from "@/types/models"
 import { api, getApiErrorMessage } from "@/lib/api"
-import { axiosInstance } from "@/lib/axios"
+import { useApp } from "@/contexts/app-context"
+import { PageSelector } from "@/components/dashboard/shared/page-selector"
 import { cn } from "@/lib/utils"
 
+const AVAILABLE_TONES = [
+  "Authoritative",
+  "Calm",
+  "Friendly",
+  "Bold",
+  "Witty",
+  "Empathetic",
+  "Humorous",
+  "Relatable",
+  "Casual",
+  "Luxury",
+  "Minimalist",
+  "Energetic",
+]
+
+const QUICK_PRESETS = [
+  {
+    name: "Tech Founder & Builder",
+    niche: "SaaS growth, product engineering, shipping fast, and bootstrapping lessons",
+    tones: ["Authoritative", "Bold", "Energetic"],
+    mode: "standard",
+  },
+  {
+    name: "Nature & Science Educator",
+    niche: "Wildlife adaptations, natural phenomena, and scientific discoveries explained simply",
+    tones: ["Calm", "Authoritative", "Empathetic"],
+    mode: "standard",
+  },
+  {
+    name: "Viral Workplace Satirist",
+    niche: "Relatable client struggles, corporate humor, Monday blues, and dev realities",
+    tones: ["Humorous", "Witty", "Relatable"],
+    mode: "meme",
+  },
+  {
+    name: "Direct-Response Growth Marketer",
+    niche: "Actionable marketing frameworks, copywriting secrets, and revenue scaling",
+    tones: ["Bold", "Energetic", "Friendly"],
+    mode: "hybrid",
+  },
+]
+
+const SAMPLE_POST_PRESETS = [
+  {
+    label: "🚀 Tech & Startup Insights",
+    content:
+      "Most startups fail not because they couldn't build the product, but because they built something nobody wanted.\n\nTalk to 10 customers before writing a single line of code. Ship an ugly MVP in 2 weeks instead of a polished app in 6 months.\n\nSpeed of iteration > perfection. What was your biggest lesson launching your first product? #StartupGrind #TechFounders",
+  },
+  {
+    label: "🌿 Nature & Science Facts",
+    content:
+      "Did you know that trees in a forest communicate and share nutrients through an underground fungal network nicknamed the 'Wood Wide Web'?\n\nWhen a tree is attacked by pests, it sends chemical warning signals to neighboring trees so they can mount defenses.\n\nNature's cooperative intelligence is far more advanced than we realize. What's your favorite natural phenomenon? #NatureFacts #ScienceWonder",
+  },
+  {
+    label: "💼 Direct-Response Value",
+    content:
+      "Stop wasting 4 hours a day on manual social media scheduling.\n\nHere is our 3-step automation blueprint to 10x your organic reach:\n1. Curate high-performing content angles\n2. Batch produce visual posters with AI\n3. Schedule across peak engagement hours\n\nDrop a 'BLUEPRINT' in the comments and I'll DM you the free checklist! #SocialMediaStrategy #GrowthHacks",
+  },
+  {
+    label: "🔥 Relatable Storytelling",
+    content:
+      "I almost quit 3 years ago.\n\nNo clients, $200 in the bank account, and everyone telling me to get a 'real job'.\n\nThe turning point? I stopped trying to please everyone and focused on one specific problem for one specific group of people.\n\nIf you're in the messy middle right now, keep pushing. The breakthrough happens right after you feel like giving up. #FounderStory #KeepGoing",
+  },
+]
+
+const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+function createBlankPersona(): Partial<AIPersona> {
+  return {
+    persona_name: "New AI Persona",
+    niche: "",
+    tone_tags: ["Friendly", "Professional"],
+    custom_instructions: "",
+    content_mode: "standard",
+    hashtags_enabled: true,
+    hashtag_count: 3,
+    always_include_engagement_hook: true,
+    creativity_level: 7,
+    assigned_days: ["Mon", "Wed", "Fri"],
+    posting_time_slots: ["09:00"],
+    prompt_config: {
+      template: "Custom (blank)",
+      audience: "Social Media Followers",
+      goal: "Engagement & Community",
+      brand_personality: ["Friendly", "Professional"],
+      always_topics: [],
+      never_topics: [],
+      every_post_includes: ["A question at the end"],
+      never_do: ["Make promises"],
+      length: "Medium",
+      structure: "Hook -> Value -> CTA",
+      examples: "",
+    },
+    meme_theme_id: "tech-startups",
+    meme_format_preference: "modern_card",
+    is_active: true,
+  }
+}
+
 export function AISettingsView({
-  pages,
+  pages = [],
+  onChanged,
   onTestPersona,
 }: {
-  pages: PageConnection[]
+  pages?: PageConnection[]
+  onChanged?: () => void
   onTestPersona?: (persona: AIPersona) => void
 }) {
   const router = useRouter()
-  const { user } = useAuth()
-  const userTimezone = user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  const searchParams = useSearchParams()
+  const { activePageId, setActivePageId } = useApp()
+
   const [selectedPageId, setSelectedPageId] = useState<number | null>(
-    pages.find((p) => p.connection_status === "connected")?.id ?? pages[0]?.id ?? null
+    activePageId ?? pages.find((p) => p.connection_status === "connected")?.id ?? pages[0]?.id ?? null
   )
+  const selectedPage = pages.find((p) => p.id === selectedPageId) || pages[0] || pages[0]
+
   const [personas, setPersonas] = useState<AIPersona[]>([])
   const [loadingPersonas, setLoadingPersonas] = useState(true)
-  const [editing, setEditing] = useState<AIPersona | null>(null)
-  const [scheduleDraft, setScheduleDraft] = useState<PersonaScheduleData>({
-    timezone: userTimezone,
-    active_days: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-    default_times: ["09:00"],
-    day_overrides: {},
-  })
+  const [selectedPersonaIndex, setSelectedPersonaIndex] = useState<number>(0)
+  const [activeDraft, setActiveDraft] = useState<Partial<AIPersona>>(createBlankPersona())
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [sample, setSample] = useState("")
-  const [previewTab, setPreviewTab] = useState<"simple" | "raw">("simple")
-  const [insights, setInsights] = useState<PerformanceInsights | null>(null)
-  const [strategy, setStrategy] = useState<any>(null)
-  const [prefilled, setPrefilled] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
-  // Brand Profile state
-  const [brandProfile, setBrandProfile] = useState<any>({
-    brand_name: "",
-    logo_url: "",
-    primary_color_hex: "#1a1a2e",
-    secondary_color_hex: "#ff6b6b",
-    font_pair_id: "space-grotesk-dm-sans",
-    palette_id: "ink-sun",
-    niche_description: "",
-  })
-  const [extractingBrand, setExtractingBrand] = useState(false)
-  const [savingBrand, setSavingBrand] = useState(false)
+  // Style Analyzer In-Place Extractor State
+  const [showStyleExtractor, setShowStyleExtractor] = useState(false)
+  const [samplePostsInput, setSamplePostsInput] = useState("")
+  const [extractingStyle, setExtractingStyle] = useState(false)
 
-  // Custom Fonts state
-  const [installedFonts, setInstalledFonts] = useState<any[]>([])
-  const [fontPairs, setFontPairs] = useState<any[]>([])
-  const [loadingFonts, setLoadingFonts] = useState(false)
-  const [customGoogleFontName, setCustomGoogleFontName] = useState("")
-  const [downloadingFont, setDownloadingFont] = useState(false)
-  const [uploadingFont, setUploadingFont] = useState(false)
+  // Open style extractor if URL contains ?mode=extract
+  useEffect(() => {
+    if (searchParams?.get("mode") === "extract") {
+      setShowStyleExtractor(true)
+      setSelectedPersonaIndex(-1)
+      setActiveDraft(createBlankPersona())
+    }
 
-  const selectedPage = pages.find((page) => page.id === selectedPageId) || pages[0]
+    try {
+      const prefillRaw = localStorage.getItem("ai_persona_prefill")
+      if (prefillRaw) {
+        const data = JSON.parse(prefillRaw)
+        localStorage.removeItem("ai_persona_prefill")
+        setSelectedPersonaIndex(-1)
+        const blank = createBlankPersona()
+        setActiveDraft({
+          ...blank,
+          persona_name: data.persona_name || blank.persona_name || "Style Analyzer Persona",
+          niche: data.niche || blank.niche || "",
+          tone_tags: Array.isArray(data.tone_tags) && data.tone_tags.length ? data.tone_tags : ["Professional"],
+          custom_instructions: data.custom_instructions || "",
+          creativity_level: data.creativity_level ? Number(data.creativity_level) : 7,
+          prompt_config: {
+            template: data.template || "Custom (blank)",
+            audience: data.audience || "Social Media Followers",
+            goal: data.goal || "Engagement & Community",
+            brand_personality: data.tone_tags || ["Friendly", "Professional"],
+            always_topics: data.always_topics || [],
+            never_topics: data.never_topics || [],
+            every_post_includes: data.every_post_includes || ["A question at the end"],
+            never_do: data.never_do || ["Make promises"],
+            length: (data.length as any) || "Medium",
+            structure: data.structure || "Hook -> Value -> CTA",
+            examples: data.examples || "",
+          },
+        })
+        toast.success("Persona DNA loaded from Style Analyzer!")
+      }
+    } catch {
+      // ignore
+    }
+  }, [searchParams])
 
-  // Load Brand Kit Profile
-  const loadBrandProfile = useCallback(() => {
-    api.get("/api/brand/profile")
-      .then((res) => {
-        if (res.data && Object.keys(res.data).length > 0) {
-          setBrandProfile((prev: any) => ({
-            ...prev,
-            ...res.data,
-            logo_url: res.data.logo_url || selectedPage?.page_picture_url || "",
-            brand_name: res.data.brand_name || selectedPage?.page_name || "My Brand",
-          }))
-        } else if (selectedPage) {
-          setBrandProfile((prev: any) => ({
-            ...prev,
-            brand_name: selectedPage.page_name,
-            logo_url: selectedPage.page_picture_url || "",
-          }))
-        }
-      })
-      .catch(() => null)
-  }, [selectedPage])
-
-  const loadPersonas = useCallback(() => {
+  // Load personas for selected page
+  const loadPersonas = useCallback(async () => {
     if (!selectedPage?.id) {
+      setPersonas([])
       setLoadingPersonas(false)
       return
     }
     setLoadingPersonas(true)
-    api.get<AIPersona[]>(`/api/ai/personas/${selectedPage.id}`)
-      .then((response) => {
-        setPersonas(response.data)
-      })
-      .catch((err) => {
-        console.error("Failed to load personas:", err)
-        toast.error("Failed to load AI personas. Please try again.")
-      })
-      .finally(() => setLoadingPersonas(false))
-
-    api.get<PerformanceInsights>(`/api/ai/performance/${selectedPage.id}`)
-      .then((response) => setInsights(response.data))
-      .catch(() => setInsights(null))
+    try {
+      const res = await api.get<AIPersona[]>(`/api/ai/personas/${selectedPage.id}`)
+      const list = res.data || []
+      setPersonas(list)
+      if (list.length > 0) {
+        setSelectedPersonaIndex(0)
+        setActiveDraft(list[0])
+      } else {
+        const blank = createBlankPersona()
+        setActiveDraft(blank)
+      }
+    } catch (e) {
+      setPersonas([])
+    } finally {
+      setLoadingPersonas(false)
+    }
   }, [selectedPage?.id])
 
   useEffect(() => {
-    if (!pages.length) return
-    const connectedId = pages.find((p) => p.connection_status === "connected")?.id ?? pages[0]?.id ?? null
-    if (connectedId !== selectedPageId) setSelectedPageId(connectedId)
     loadPersonas()
-    loadBrandProfile()
-  }, [loadPersonas, loadBrandProfile, pages, selectedPageId])
+  }, [loadPersonas])
 
-  useEffect(() => {
-    if (editing?.id) {
-      api.get(`/api/ai/personas/${editing.id}/strategy`).then((res) => setStrategy(res.data)).catch(() => setStrategy(null))
-    } else {
-      setStrategy(null)
+  function handleSelectPersona(p: AIPersona, index: number) {
+    setSelectedPersonaIndex(index)
+    setActiveDraft(p)
+    setShowStyleExtractor(false)
+  }
+
+  function handleNewPersona() {
+    const blank = createBlankPersona()
+    setSelectedPersonaIndex(-1)
+    setActiveDraft(blank)
+    toast.info("Drafting a new AI Persona. Configure details below or use Style Analyzer.")
+  }
+
+  function toggleTone(tone: string) {
+    const current = Array.isArray(activeDraft.tone_tags) ? activeDraft.tone_tags : []
+    const next = current.includes(tone)
+      ? current.filter((t) => t !== tone)
+      : [...current, tone].slice(0, 4)
+    setActiveDraft({ ...activeDraft, tone_tags: next })
+  }
+
+  function toggleDay(day: string) {
+    const current = Array.isArray(activeDraft.assigned_days) ? activeDraft.assigned_days : []
+    const next = current.includes(day)
+      ? current.filter((d) => d !== day)
+      : [...current, day]
+    setActiveDraft({ ...activeDraft, assigned_days: next })
+  }
+
+  function applyPreset(preset: (typeof QUICK_PRESETS)[0]) {
+    setActiveDraft({
+      ...activeDraft,
+      persona_name: preset.name,
+      niche: preset.niche,
+      tone_tags: preset.tones,
+      content_mode: preset.mode as any,
+    })
+    toast.success(`Applied "${preset.name}" preset!`)
+  }
+
+  // --- Extract Persona DNA from Sample Posts (Integrated Style Analyzer) ---
+  async function handleExtractFromPosts() {
+    if (!samplePostsInput.trim()) {
+      return toast.error("Please paste at least one sample post or select a preset.")
     }
-  }, [editing?.id])
 
-  // --- Auto-Extract Brand Kit ---
-  async function handleAutoExtractBrandKit() {
-    if (!selectedPage) return toast.error("Connect a Facebook page first.")
-    setExtractingBrand(true)
+    setExtractingStyle(true)
     try {
-      const res = await axiosInstance.post("/api/brand/auto-extract", {
-        page_connection_id: selectedPage.id,
-        logo_url: selectedPage.page_picture_url || undefined,
-      })
-      if (res.data.success) {
-        setBrandProfile((prev: any) => ({
-          ...prev,
-          brand_name: res.data.brand_name || prev.brand_name,
-          logo_url: res.data.logo_url || prev.logo_url,
-          primary_color_hex: res.data.primary_color_hex || prev.primary_color_hex,
-          secondary_color_hex: res.data.secondary_color_hex || prev.secondary_color_hex,
-          palette_id: res.data.palette_id || prev.palette_id,
-          font_pair_id: res.data.font_pair_id || prev.font_pair_id,
-          tone: res.data.tone || prev.tone,
-        }))
-        toast.success("Brand Identity & Colors extracted from your Facebook Page!")
+      const posts = samplePostsInput.split(/\n\n+/).filter((p) => p.trim())
+      const res = await api.post("/api/ai/generate-persona-from-posts", { posts })
+      const data = res.data
+
+      setActiveDraft((prev) => ({
+        ...prev,
+        persona_name: data.persona_name || prev.persona_name || "Custom Style Persona",
+        niche: data.niche || prev.niche || "",
+        tone_tags: Array.isArray(data.tone_tags) && data.tone_tags.length ? data.tone_tags : prev.tone_tags,
+        custom_instructions: data.custom_instructions || prev.custom_instructions || "",
+        hashtags_enabled: typeof data.hashtags_enabled === "boolean" ? data.hashtags_enabled : true,
+        hashtag_count: typeof data.hashtag_count === "number" ? data.hashtag_count : 3,
+        always_include_engagement_hook: typeof data.always_include_engagement_hook === "boolean" ? data.always_include_engagement_hook : true,
+        creativity_level: typeof data.creativity_level === "number" ? data.creativity_level : 7,
+        prompt_config: data.prompt_config || prev.prompt_config,
+      }))
+
+      setShowStyleExtractor(false)
+      setSamplePostsInput("")
+      toast.success("Style analyzed! Persona DNA and voice directives auto-filled below.")
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, "Failed to analyze writing style."))
+    } finally {
+      setExtractingStyle(false)
+    }
+  }
+
+  async function handleSavePersona() {
+    if (!selectedPage?.id) {
+      return toast.error("Connect a Facebook Page first before saving.")
+    }
+    if (!activeDraft.niche?.trim()) {
+      return toast.error("Please enter a niche or audience focus.")
+    }
+
+    setSaving(true)
+    try {
+      const payload = {
+        ...activeDraft,
+        persona_name: activeDraft.persona_name?.trim() || "Untitled Persona",
+        niche: activeDraft.niche.trim(),
+        tone_tags: Array.isArray(activeDraft.tone_tags) && activeDraft.tone_tags.length ? activeDraft.tone_tags : ["Professional"],
+        assigned_days: activeDraft.assigned_days || ["Mon", "Wed", "Fri"],
+        posting_time_slots: activeDraft.posting_time_slots || ["09:00"],
       }
+
+      if (activeDraft.id) {
+        await api.put(`/api/ai/personas/${activeDraft.id}`, payload)
+        toast.success("Persona updated successfully!")
+      } else {
+        await api.post(`/api/ai/personas/${selectedPage.id}`, payload)
+        toast.success("New Persona created and assigned to page!")
+      }
+
+      await loadPersonas()
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Brand Kit extraction failed.")
+      toast.error(getApiErrorMessage(err, "Failed to save persona."))
     } finally {
-      setExtractingBrand(false)
+      setSaving(false)
     }
   }
 
-  // --- Custom Fonts Handlers ---
-  const loadFonts = useCallback(async () => {
-    setLoadingFonts(true)
-    try {
-      const res = await axiosInstance.get("/api/fonts")
-      setInstalledFonts(res.data.installed_fonts || [])
-      setFontPairs(res.data.font_pairs || [])
-    } catch {
-      // ignore
-    } finally {
-      setLoadingFonts(false)
+  async function handleDeletePersona() {
+    if (!activeDraft.id) {
+      // Discarding new draft
+      if (personas.length > 0) {
+        setSelectedPersonaIndex(0)
+        setActiveDraft(personas[0])
+      } else {
+        setActiveDraft(createBlankPersona())
+      }
+      return
     }
-  }, [])
 
-  useEffect(() => {
-    loadFonts()
-  }, [loadFonts])
+    if (!window.confirm(`Delete persona "${activeDraft.persona_name}"?`)) return
 
-  async function handleDownloadGoogleFont(fontName?: string) {
-    const target = fontName || customGoogleFontName
-    if (!target?.trim()) return toast.error("Enter a Google Font name.")
-    setDownloadingFont(true)
+    setDeleting(true)
     try {
-      const res = await axiosInstance.post("/api/fonts/download-google-font", {
-        font_family: target.trim(),
-      })
-      toast.success(res.data.message || `Downloaded font ${target}!`)
-      setCustomGoogleFontName("")
-      loadFonts()
+      await api.delete(`/api/ai/personas/${activeDraft.id}`)
+      toast.success("Persona deleted.")
+      await loadPersonas()
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Could not download Google Font.")
+      toast.error(getApiErrorMessage(err, "Failed to delete persona."))
     } finally {
-      setDownloadingFont(false)
+      setDeleting(false)
     }
   }
 
-  async function handleUploadFontFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const formData = new FormData()
-    formData.append("file", file)
-    setUploadingFont(true)
-    try {
-      const res = await axiosInstance.post("/api/fonts/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      toast.success(res.data.message || "Custom font uploaded successfully!")
-      loadFonts()
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Font upload failed.")
-    } finally {
-      setUploadingFont(false)
-      e.target.value = ""
+  function handleTestInCreatePost() {
+    if (!activeDraft) return
+    if (onTestPersona) {
+      onTestPersona(activeDraft as AIPersona)
+    } else {
+      router.push(
+        `/dashboard/create?persona_id=${activeDraft.id || ""}&topic=${encodeURIComponent(
+          activeDraft.niche || activeDraft.persona_name || "Trending Topic"
+        )}`
+      )
     }
   }
 
-  async function handleDeleteFont(filename: string) {
-    if (!window.confirm(`Delete font file "${filename}"?`)) return
-    try {
-      await axiosInstance.delete(`/api/fonts/${filename}`)
-      toast.success("Font removed.")
-      loadFonts()
-    } catch (err: any) {
-      toast.error("Failed to delete font.")
-    }
+  function handleTestInMemeStudio() {
+    router.push(`/dashboard/memes?persona_id=${activeDraft.id || ""}`)
   }
 
-  // --- Save Brand Kit ---
-  async function handleSaveBrandKit() {
-    setSavingBrand(true)
-    try {
-      await api.post("/api/brand/profile", brandProfile)
-      toast.success("Brand Kit saved successfully!")
-    } catch (err: any) {
-      toast.error("Failed to save Brand Kit.")
-    } finally {
-      setSavingBrand(false)
+  // Simulated copy for the Live Facebook Mockup
+  const simulatedPostText = React.useMemo(() => {
+    const tones = Array.isArray(activeDraft.tone_tags) && activeDraft.tone_tags.length
+      ? activeDraft.tone_tags.join(" & ")
+      : "Engaging"
+    const niche = activeDraft.niche?.trim() || "modern business, social strategy, and value delivery"
+
+    if (activeDraft.content_mode === "meme") {
+      return `That moment when you apply the "${activeDraft.persona_name || "Viral Persona"}" strategy and the post gets 10x more reach than expected 🚀\n\nWhen the audience finally connects with your content:\n\n#${(activeDraft.persona_name || "Meme").replace(/[^a-zA-Z0-9]/g, "")} #Relatable`
     }
-  }
+
+    return `Here is what nobody tells you about ${niche}:\n\n1. Focus on relentless consistency over sporadic perfection.\n2. Speak directly to one person with a ${tones.toLowerCase()} voice.\n3. Always deliver tangible value before asking for action.\n\nWhat has been your biggest breakthrough with this? Drop your thoughts below! 👇\n\n#${(activeDraft.persona_name || "Growth").replace(/[^a-zA-Z0-9]/g, "")} #Strategy #ContentCreator`
+  }, [activeDraft])
 
   return (
     <div className="grid gap-6">
-      {/* Title & Page Selector */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <PageTitle
-          title="Brand Kit & AI Personas"
-          subtitle="Configure your brand identity once, and craft tailored AI content personas."
-        />
-        {pages.length > 1 && (
-          <div className="w-full sm:w-64">
-            <Select
-              value={String(selectedPageId ?? pages[0].id)}
-              onChange={(e) => setSelectedPageId(Number(e.target.value))}
-            >
-              {pages.map((page) => (
-                <option key={page.id} value={String(page.id)}>
-                  {page.page_name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        )}
-      </div>
-
-      {/* --- 1-Click Brand Kit Profile Card --- */}
-      <Card className="border-indigo-100 bg-gradient-to-r from-purple-50/60 via-white to-blue-50/60 shadow-xs">
-        <CardHeader className="pb-3 border-b border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-xs">
-                <Palette className="size-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold text-slate-900">Brand Kit Autopilot</CardTitle>
-                <CardDescription className="text-xs">
-                  Your logo, brand palette, and typography automatically applied to every generated poster.
-                </CardDescription>
-              </div>
+      {/* Main Studio 2-Column Grid */}
+      <div className="grid gap-6 lg:grid-cols-12 items-start">
+        {/* Left Column (7 cols): Persona Tabs, Editor & Sticky Action Bar */}
+        <div className="lg:col-span-7 flex flex-col gap-5">
+          {/* Top Persona Switcher Bar */}
+          <div className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+              {loadingPersonas ? (
+                <div className="flex items-center gap-2 py-1 px-3 text-xs text-slate-400">
+                  <Loader2 className="size-3.5 animate-spin" /> Loading Personas...
+                </div>
+              ) : (
+                personas.map((p, idx) => {
+                  const isSelected = selectedPersonaIndex === idx
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleSelectPersona(p, idx)}
+                      className={cn(
+                        "text-xs font-semibold px-3 py-1.5 rounded-full transition-all border shrink-0 flex items-center gap-1.5 shadow-2xs",
+                        isSelected
+                          ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                          : "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
+                      )}
+                    >
+                      <span>{p.content_mode === "meme" ? "😂" : (p.content_mode === "hybrid" ? "⚡" : "📝")}</span>
+                      <span>{p.persona_name}</span>
+                    </button>
+                  )
+                })
+              )}
             </div>
+
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleNewPersona}
+              className={cn(
+                "h-8 text-xs font-bold shrink-0 shadow-xs",
+                selectedPersonaIndex === -1
+                  ? "bg-purple-700 text-white"
+                  : "bg-white text-purple-700 border border-purple-200 hover:bg-purple-50"
+              )}
+            >
+              <Plus className="size-3.5 mr-1" />
+              New Persona
+            </Button>
+          </div>
+
+          {/* 1. Persona Identity & Mode Card / Style Analyzer */}
+          {showStyleExtractor ? (
+            /* Dedicated Style Analyzer Screen UI */
+            <Card className="shadow-xs border border-purple-300 bg-white animate-in fade-in duration-200">
+              <CardHeader className="pb-3 border-b border-purple-100 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-purple-50 rounded-t-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="size-7 rounded-md bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                      <Wand2 className="size-4" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-sm font-bold text-slate-900">
+                        Style Analyzer — Extract Persona from Posts
+                      </CardTitle>
+                      <CardDescription className="text-xs text-purple-700 font-medium">
+                        Paste your sample writing to automatically clone your voice, tone, and formatting habits.
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowStyleExtractor(false)}
+                    className="text-xs text-slate-500 h-7"
+                  >
+                    Back to Manual Form
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4 grid gap-4">
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-700">Your Sample Writing</Label>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      {samplePostsInput.trim()
+                        ? `${samplePostsInput.trim().split(/\s+/).length} words · ${samplePostsInput.split(/\n\n+/).filter((p) => p.trim()).length} post(s)`
+                        : "Paste 1 or more posts separated by a blank line"}
+                    </span>
+                  </div>
+                  <Textarea
+                    value={samplePostsInput}
+                    onChange={(e) => setSamplePostsInput(e.target.value)}
+                    placeholder="Paste 1 or more of your real social-media posts or articles here..."
+                    className="min-h-[160px] text-xs bg-white resize-y shadow-inner"
+                    disabled={extractingStyle}
+                  />
+                </div>
+
+                {/* Sample Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                    <Zap className="size-3 text-purple-600" />
+                    Try Samples:
+                  </span>
+                  {SAMPLE_POST_PRESETS.map((preset, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setSamplePostsInput(preset.content)}
+                      className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowStyleExtractor(false)}
+                    className="text-xs text-slate-600 h-8"
+                  >
+                    Cancel
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={handleExtractFromPosts}
+                    disabled={extractingStyle || !samplePostsInput.trim()}
+                    className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold h-9 text-xs shadow-xs px-5"
+                  >
+                    {extractingStyle ? (
+                      <>
+                        <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                        Analyzing Style &amp; Building Persona...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="size-3.5 mr-1.5" />
+                        Analyze &amp; Auto-Fill Persona
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Manual Persona Form Card */}
+              <Card className="shadow-xs border border-purple-200 bg-white">
+                <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Sparkles className="size-3.5 text-purple-600" />
+                      Persona Identity &amp; Voice
+                    </Label>
+                    <PageSelector
+                      pages={pages}
+                      selectedPageId={selectedPageId}
+                      onSelectPageId={(id) => {
+                        setSelectedPageId(id)
+                        setActivePageId(id)
+                      }}
+                      size="sm"
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4 grid gap-4">
+                  {/* Style Extractor Button (Only visible when creating a new persona) */}
+                  {!activeDraft.id && (
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-gradient-to-r from-purple-50 via-indigo-50/60 to-purple-50 border border-purple-200 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <Wand2 className="size-4 text-purple-600" />
+                        <span className="text-xs font-bold text-purple-950">
+                          Want to clone your writing style automatically?
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowStyleExtractor(true)}
+                        className="h-7 text-xs bg-white text-purple-700 border-purple-300 hover:bg-purple-100 font-semibold"
+                      >
+                        <Sparkles className="size-3 mr-1" />
+                        Extract from Posts
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Persona Name */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Persona Name</Label>
+                    <Input
+                      value={activeDraft.persona_name || ""}
+                      onChange={(e) => setActiveDraft({ ...activeDraft, persona_name: e.target.value })}
+                      placeholder="e.g. Nature Science Communicator, Tech Founder..."
+                      className="h-9 text-xs"
+                    />
+                  </div>
+
+                  {/* Content Type Selector */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Generation Content Mode</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { id: "standard", label: "📝 Standard Posts", desc: "Thought leadership & posters" },
+                        { id: "meme", label: "😂 Viral Memes", desc: "Workplace satire & scenarios" },
+                        { id: "hybrid", label: "⚡ Hybrid (50/50)", desc: "Mix of posters & memes" },
+                      ].map((mode) => {
+                        const isSelected = (activeDraft.content_mode || "standard") === mode.id
+                        return (
+                          <button
+                            key={mode.id}
+                            type="button"
+                            onClick={() => setActiveDraft({ ...activeDraft, content_mode: mode.id as any })}
+                            className={cn(
+                              "p-2.5 rounded-lg border text-left transition-all",
+                              isSelected
+                                ? "bg-purple-50 border-purple-600 ring-2 ring-purple-600/20 shadow-xs"
+                                : "bg-white border-slate-200 hover:bg-slate-50"
+                            )}
+                          >
+                            <span className="text-xs font-bold text-slate-900 block">{mode.label}</span>
+                            <span className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{mode.desc}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Niche / Topic Focus */}
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs font-semibold text-slate-700">Niche &amp; Audience Focus</Label>
+                    <Textarea
+                      value={activeDraft.niche || ""}
+                      onChange={(e) => setActiveDraft({ ...activeDraft, niche: e.target.value })}
+                      placeholder="e.g. Educational content about wildlife adaptations and natural phenomena, blending scientific facts with engaging storytelling."
+                      className="min-h-[85px] text-xs resize-y"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 2. Voice, Tone & Quick Presets Card */}
+              <Card className="shadow-xs border border-slate-200 bg-white">
+                <CardHeader className="py-3 px-4 border-b border-slate-100 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-xs font-bold text-slate-800">Tone Tags &amp; Quick Presets</CardTitle>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+                      className="text-xs text-slate-600 font-semibold h-7"
+                    >
+                      <Settings2 className="size-3 mr-1" />
+                      Advanced Rules
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4 grid gap-4">
+                  {/* Quick Preset Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                      <Zap className="size-3 text-purple-600" />
+                      Presets:
+                    </span>
+                    {QUICK_PRESETS.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => applyPreset(preset)}
+                        className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Selectable Tone Chips */}
+                  <div className="grid gap-1.5 pt-1 border-t border-slate-100">
+                    <Label className="text-xs font-semibold text-slate-700">Voice Tone Tags (Select up to 4)</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {AVAILABLE_TONES.map((tone) => {
+                        const isSelected = Array.isArray(activeDraft.tone_tags) && activeDraft.tone_tags.includes(tone)
+                        return (
+                          <button
+                            key={tone}
+                            type="button"
+                            onClick={() => toggleTone(tone)}
+                            className={cn(
+                              "text-xs font-medium px-2.5 py-1 rounded-full border transition-all",
+                              isSelected
+                                ? "bg-purple-600 text-white border-purple-600 font-semibold shadow-xs"
+                                : "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
+                            )}
+                          >
+                            {tone}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Advanced Settings Collapsible */}
+                  {isAdvancedOpen && (
+                    <div className="pt-3 mt-1 border-t border-slate-100 grid gap-4 animate-in fade-in duration-200 slide-in-from-top-3">
+                      {/* Custom Directives */}
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs font-semibold text-slate-700">Custom Stylistic Instructions</Label>
+                        <Textarea
+                          value={activeDraft.custom_instructions || ""}
+                          onChange={(e) => setActiveDraft({ ...activeDraft, custom_instructions: e.target.value })}
+                          placeholder="e.g. Always use bullet points, avoid corporate jargon, open with a provocative question..."
+                          className="min-h-[75px] text-xs resize-y"
+                        />
+                      </div>
+
+                      {/* Posting Days */}
+                      <div className="grid gap-1.5">
+                        <Label className="text-xs font-semibold text-slate-700">Assigned Autonomous Posting Days</Label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {WEEK_DAYS.map((day) => {
+                            const isDayActive = Array.isArray(activeDraft.assigned_days) && activeDraft.assigned_days.includes(day)
+                            return (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => toggleDay(day)}
+                                className={cn(
+                                  "text-xs font-medium px-2.5 py-1 rounded-md border transition-all",
+                                  isDayActive
+                                    ? "bg-purple-700 text-white border-purple-700 font-semibold"
+                                    : "bg-slate-50 text-slate-600 hover:bg-slate-100 border-slate-200"
+                                )}
+                              >
+                                {day}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Switches */}
+                      <div className="grid sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label htmlFor="persona-hashtags" className="text-xs font-medium cursor-pointer">
+                            Enable Automatic Hashtags
+                          </Label>
+                          <Switch
+                            id="persona-hashtags"
+                            checked={activeDraft.hashtags_enabled ?? true}
+                            onCheckedChange={(val) => setActiveDraft({ ...activeDraft, hashtags_enabled: val })}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label htmlFor="persona-cta" className="text-xs font-medium cursor-pointer">
+                            Always Include CTA Hook
+                          </Label>
+                          <Switch
+                            id="persona-cta"
+                            checked={activeDraft.always_include_engagement_hook ?? true}
+                            onCheckedChange={(val) => setActiveDraft({ ...activeDraft, always_include_engagement_hook: val })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
+
+          {/* 3. Sticky Action Bar: Delete, Test in Create, Save Persona */}
+          <div className="sticky bottom-4 z-40 mt-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-[0_4px_24px_rgba(0,0,0,0.12)] px-4 py-2.5 rounded-xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 border-purple-300 text-purple-800 hover:bg-purple-50 text-xs font-semibold"
-                onClick={handleAutoExtractBrandKit}
-                disabled={extractingBrand || !selectedPage}
+                onClick={handleDeletePersona}
+                disabled={deleting}
+                className="text-red-600 hover:bg-red-50 hover:border-red-200 shadow-xs text-xs h-8"
               >
-                {extractingBrand ? (
-                  <Loader2 className="size-3.5 animate-spin mr-1.5" />
-                ) : (
-                  <Sparkles className="size-3.5 mr-1.5 text-purple-600" />
-                )}
-                Auto-Extract from Page
+                <Trash2 className="size-3.5 mr-1" />
+                {activeDraft.id ? "Delete" : "Discard"}
               </Button>
+
+              {(activeDraft.content_mode === "meme" || activeDraft.content_mode === "hybrid") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestInMemeStudio}
+                  className="text-pink-700 border-pink-200 hover:bg-pink-50 shadow-xs text-xs h-8"
+                >
+                  <Laugh className="size-3.5 mr-1 text-pink-600" />
+                  Meme Studio
+                </Button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleTestInCreatePost}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold shadow-xs text-xs h-8"
+              >
+                <Send className="size-3.5 mr-1.5" />
+                Test in Create Post
+              </Button>
+
               <Button
                 type="button"
                 size="sm"
-                className="h-8 bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold"
-                onClick={handleSaveBrandKit}
-                disabled={savingBrand}
+                onClick={handleSavePersona}
+                disabled={saving}
+                className="bg-purple-700 hover:bg-purple-800 text-white font-semibold shadow-xs text-xs h-8"
               >
-                {savingBrand ? <Loader2 className="size-3.5 animate-spin mr-1.5" /> : <Check className="size-3.5 mr-1.5" />}
-                Save Brand Kit
+                {saving ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-3.5 mr-1.5" />
+                    Save AI Persona
+                  </>
+                )}
               </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 items-center">
-          {/* Brand Identity / Logo Preview */}
-          <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
-            <div className="size-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200 shrink-0">
-              {brandProfile.logo_url ? (
-                <img src={brandProfile.logo_url} alt="Brand Logo" className="size-full object-cover" />
-              ) : (
-                <Palette className="size-6 text-slate-400" />
-              )}
-            </div>
-            <div className="grid gap-0.5 overflow-hidden">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Brand Name</span>
-              <Input
-                value={brandProfile.brand_name || ""}
-                onChange={(e) => setBrandProfile({ ...brandProfile, brand_name: e.target.value })}
-                className="h-7 text-xs font-semibold text-slate-800 px-1.5"
-                placeholder="Brand Name"
-              />
-            </div>
-          </div>
-
-          {/* Brand Colors */}
-          <div className="grid gap-1.5 rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Primary & Secondary</span>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="color"
-                  value={brandProfile.primary_color_hex || "#1877F2"}
-                  onChange={(e) => setBrandProfile({ ...brandProfile, primary_color_hex: e.target.value })}
-                  className="size-6 rounded cursor-pointer border border-slate-300 p-0"
-                />
-                <span className="text-xs font-mono text-slate-600">{brandProfile.primary_color_hex}</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="color"
-                  value={brandProfile.secondary_color_hex || "#42B72A"}
-                  onChange={(e) => setBrandProfile({ ...brandProfile, secondary_color_hex: e.target.value })}
-                  className="size-6 rounded cursor-pointer border border-slate-300 p-0"
-                />
-                <span className="text-xs font-mono text-slate-600">{brandProfile.secondary_color_hex}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Design System Palette */}
-          <div className="grid gap-1.5 rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Design System Palette</span>
-            <Select
-              value={brandProfile.palette_id || "ink-sun"}
-              onChange={(e) => setBrandProfile({ ...brandProfile, palette_id: e.target.value })}
-              className="h-7 text-xs"
-            >
-              <option value="ink-sun">Ink Sun (Bold Tech)</option>
-              <option value="cream-berry">Cream Berry (Warm Food)</option>
-              <option value="midnight-mint">Midnight Mint (Fresh Tech)</option>
-              <option value="paper-tomato">Paper Tomato (Retail & Energetic)</option>
-              <option value="forest-lime">Forest Lime (Organic & Natural)</option>
-              <option value="cobalt-coral">Cobalt Coral (Social & Playful)</option>
-              <option value="charcoal-lilac">Charcoal Lilac (Premium Beauty)</option>
-              <option value="white-emerald">White Emerald (Clean Wellness)</option>
-            </Select>
-          </div>
-
-          {/* Typography Font Pair */}
-          <div className="grid gap-1.5 rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Typography Font Pair</span>
-            <Select
-              value={brandProfile.font_pair_id || "space-grotesk-dm-sans"}
-              onChange={(e) => setBrandProfile({ ...brandProfile, font_pair_id: e.target.value })}
-              className="h-7 text-xs"
-            >
-              <option value="space-grotesk-dm-sans">Space Grotesk / DM Sans</option>
-              <option value="playfair-montserrat">Playfair Display / Montserrat</option>
-              <option value="oswald-inter">Oswald / Inter</option>
-              <option value="merriweather-roboto">Merriweather / Roboto</option>
-              <option value="syne-plus-jakarta">Syne / Plus Jakarta Sans</option>
-              {installedFonts.map((f) => (
-                <option key={f.filename} value={f.family.toLowerCase()}>
-                  {f.family} (Custom Installed)
-                </option>
-              ))}
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* --- Brand Typography Quick Link Card --- */}
-      <Card className="border-purple-200 bg-linear-to-r from-purple-50/50 via-white to-indigo-50/30 shadow-2xs">
-        <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-purple-600 text-white shadow-xs">
-              <Type className="size-4.5" />
-            </div>
-            <div>
-              <h4 className="text-xs font-bold text-slate-900">Custom Typography &amp; Font Manager</h4>
-              <p className="text-[11px] text-slate-500">
-                Install new Google Fonts, upload brand font binaries (.ttf, .otf), and inspect type specimens in Settings.
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-            className="h-8 text-xs font-semibold gap-1.5 border-purple-200 text-purple-700 hover:bg-purple-50 hover:border-purple-300 shrink-0"
-          >
-            <Link href="/dashboard/settings">
-              <Settings2 className="size-3.5" />
-              Open Typography Studio
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* --- Personas List Section --- */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-bold text-slate-900">AI Content Personas</h3>
-          <p className="text-xs text-slate-500">Personas define the voice, tone, and scheduling rules for your page.</p>
         </div>
-        <Button
-          onClick={() => {
-            const fresh = emptyPersona()
-            fresh.brand_palette_id = brandProfile.palette_id || "ink-sun"
-            fresh.brand_font_pair_id = brandProfile.font_pair_id || "space-grotesk-dm-sans"
-            setEditing(fresh)
-          }}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs h-8 shadow-xs"
-        >
-          <Plus className="size-3.5 mr-1.5" />
-          Create AI Persona
-        </Button>
-      </div>
 
-      {loadingPersonas ? (
-        <div className="flex items-center justify-center p-12">
-          <Loader2 className="size-6 animate-spin text-purple-600" />
-        </div>
-      ) : personas.length === 0 ? (
-        <Card className="border-dashed p-8 text-center">
-          <Wand2 className="size-10 text-purple-400 mx-auto mb-2" />
-          <h4 className="text-sm font-semibold text-slate-800">No Personas Setup Yet</h4>
-          <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
-            Set up an AI persona to define your page niche, tone of voice, and autonomous posting schedule.
-          </p>
-          <Button
-            onClick={() => setEditing(emptyPersona())}
-            className="bg-purple-700 hover:bg-purple-800 text-white text-xs"
-          >
-            <Plus className="size-3.5 mr-1.5" />
-            Set Up Your First Persona
-          </Button>
-        </Card>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {personas.map((persona) => (
-            <Card key={persona.id} className="shadow-xs hover:border-purple-300 transition-all">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    {persona.content_mode === "meme" && (
-                      <Badge className="text-[10px] bg-pink-100 text-pink-800 border-pink-200 hover:bg-pink-100 font-bold">
-                        😂 Viral Meme Mode
-                      </Badge>
-                    )}
-                    {persona.content_mode === "hybrid" && (
-                      <Badge className="text-[10px] bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-100 font-bold">
-                        ⚡ Hybrid Mode
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-[10px] text-purple-700 border-purple-200">
-                      {persona.priority_level} Priority
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-slate-600 hover:text-slate-900"
-                      onClick={() => setEditing(persona)}
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                </div>
-                <CardTitle className="text-sm font-bold mt-1 text-slate-900">{persona.persona_name}</CardTitle>
-                <CardDescription className="text-xs line-clamp-2">{persona.niche}</CardDescription>
-              </CardHeader>
-              <CardContent className="p-4 pt-1 grid gap-2 text-xs text-slate-600">
-                <div className="flex flex-wrap gap-1">
-                  {(Array.isArray(persona.tone_tags) ? persona.tone_tags : []).map(
-                    (tone: string, idx: number) => (
-                      <span key={idx} className="rounded bg-purple-50 text-purple-800 px-1.5 py-0.5 text-[10px] font-medium">
-                        {tone}
-                      </span>
-                    )
-                  )}
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-                  <span>Schedule: {Array.isArray(persona.assigned_days) ? persona.assigned_days.join(", ") : "Everyday"}</span>
-                  <span className="font-semibold text-slate-700">{persona.total_posts_published || 0} posts</span>
-                </div>
-                <div className="pt-1 flex flex-col gap-1.5">
-                  <Button
-                    size="sm"
-                    className="w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs h-7.5 flex items-center justify-center gap-1.5 shadow-2xs"
-                    onClick={() => {
-                      if (onTestPersona) {
-                        onTestPersona(persona)
-                      } else {
-                        router.push(`/dashboard/create?persona_id=${persona.id}&topic=${encodeURIComponent(persona.niche || persona.persona_name || "Trending Topic")}`)
-                      }
-                    }}
-                  >
-                    <Sparkles className="size-3.5" />
-                    Check / Test in Create Post →
-                  </Button>
-                  {(persona.content_mode === "meme" || persona.content_mode === "hybrid") && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full border-pink-200 text-pink-700 hover:bg-pink-50 font-semibold text-xs h-7 flex items-center justify-center gap-1.5"
-                      onClick={() => {
-                        router.push(`/dashboard/memes?persona_id=${persona.id}`)
-                      }}
-                    >
-                      <span>😂</span>
-                      Open in Viral Meme Studio →
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* --- Streamlined 3-Step Persona Wizard Modal --- */}
-      {editing && (
-        <StreamlinedPersonaModal
-          draft={editing}
-          brandProfile={brandProfile}
-          saving={saving}
-          schedule={scheduleDraft}
-          onScheduleChange={setScheduleDraft}
-          onChange={setEditing}
-          onClose={() => setEditing(null)}
-          onSave={async () => {
-            if (!editing.niche.trim()) return toast.error("Please specify your page niche/topic.")
-            setSaving(true)
-            try {
-              const payload = {
-                ...editing,
-                assigned_days: activeDaysToAbbrev(scheduleDraft.active_days),
-                posting_time_slots: scheduleDraft.default_times,
-              }
-              if (editing.id) {
-                await api.put(`/api/ai/personas/${editing.id}`, payload)
-              } else {
-                await api.post(`/api/ai/personas/${selectedPage.id}`, payload)
-              }
-              toast.success("Persona saved successfully!")
-              setEditing(null)
-              loadPersonas()
-            } catch (err: any) {
-              toast.error(err.response?.data?.detail || "Failed to save persona.")
-            } finally {
-              setSaving(false)
-            }
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-function StreamlinedPersonaModal({
-  draft,
-  brandProfile,
-  saving,
-  schedule,
-  onScheduleChange,
-  onChange,
-  onClose,
-  onSave,
-}: {
-  draft: AIPersona
-  brandProfile: any
-  saving: boolean
-  schedule: PersonaScheduleData
-  onScheduleChange: (schedule: PersonaScheduleData) => void
-  onChange: (persona: AIPersona) => void
-  onClose: () => void
-  onSave: () => void
-}) {
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const config = promptConfig(draft)
-
-  function toggleTone(tone: string) {
-    const current = Array.isArray(draft.tone_tags) ? draft.tone_tags : []
-    const next = current.includes(tone) ? current.filter((t) => t !== tone) : [...current, tone].slice(0, 4)
-    onChange({ ...draft, tone_tags: next })
-  }
-
-  function toggleDay(day: string) {
-    const active = schedule.active_days.includes(day)
-      ? schedule.active_days.filter((d) => d !== day)
-      : [...schedule.active_days, day]
-    onScheduleChange({ ...schedule, active_days: active })
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs p-4 flex items-center justify-center animate-in fade-in duration-200">
-      <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
-        <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/80">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-md bg-purple-600 text-white">
-                <Wand2 className="size-4" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-bold">
-                  {draft.id ? "Edit AI Persona" : "Create New AI Persona"}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  Define your brand tone, audience focus, and posting schedule in 3 simple steps.
-                </CardDescription>
-              </div>
-            </div>
-            <Button variant="ghost" size="sm" className="size-8 p-0" onClick={onClose}>
-              <X className="size-4" />
-            </Button>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-6 grid gap-5">
-          {/* Content Mode / Persona Specialization */}
-          <div className="grid gap-2 p-3.5 rounded-xl border border-purple-100 bg-gradient-to-r from-purple-50/50 via-indigo-50/30 to-pink-50/40">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                <Sparkles className="size-3.5 text-purple-600" />
-                Persona Content Type
-              </Label>
-              <span className="text-[11px] text-slate-500">Choose post generation style</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {[
-                {
-                  id: "standard",
-                  title: "📝 Standard Posts",
-                  desc: "Educational, thought leadership & promo posters",
-                },
-                {
-                  id: "meme",
-                  title: "😂 Viral Memes & Scenarios",
-                  desc: "Relatable humor, punchlines & viral scenario cards",
-                },
-                {
-                  id: "hybrid",
-                  title: "⚡ Hybrid (50/50)",
-                  desc: "Mix of high-value posts and viral humor",
-                },
-              ].map((m) => {
-                const isSelected = (draft.content_mode || "standard") === m.id
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => {
-                      const isMemeMode = m.id === "meme"
-                      onChange({
-                        ...draft,
-                        content_mode: m.id as any,
-                        ...(isMemeMode && (!draft.tone_tags || draft.tone_tags.length === 0 || draft.tone_tags.includes("Professional"))
-                          ? {
-                              tone_tags: ["Humorous", "Witty", "Relatable", "Casual"],
-                              niche: draft.niche || "Relatable workplace humor, tech satire, and daily situational struggles",
-                              persona_name: draft.persona_name || "Viral Meme Creator",
-                              meme_format_preference: draft.meme_format_preference || "modern_card",
-                              meme_theme_id: draft.meme_theme_id || "tech-startups",
-                            }
-                          : {}),
-                      })
-                    }}
-                    className={cn(
-                      "p-2.5 rounded-lg border text-left transition-all",
-                      isSelected
-                        ? "bg-white border-purple-600 ring-2 ring-purple-600/20 shadow-xs"
-                        : "bg-white/70 border-slate-200 hover:bg-white hover:border-slate-300"
-                    )}
-                  >
-                    <div className="text-xs font-bold text-slate-900">{m.title}</div>
-                    <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">{m.desc}</div>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Meme Specific Options */}
-            {((draft.content_mode || "standard") === "meme" || draft.content_mode === "hybrid") && (
-              <div className="mt-2 pt-2.5 border-t border-purple-100 grid gap-3 sm:grid-cols-2 animate-in fade-in">
-                <div className="grid gap-1">
-                  <Label className="text-[11px] font-bold text-slate-700">Default Meme Layout</Label>
-                  <Select
-                    value={draft.meme_format_preference || "modern_card"}
-                    onChange={(e) => onChange({ ...draft, meme_format_preference: e.target.value as any })}
-                    className="h-8 text-xs bg-white"
-                  >
-                    <option value="modern_card">Modern Card (Header Punchline + Graphic)</option>
-                    <option value="classic">Classic Impact (Top/Bottom Bold Text)</option>
-                  </Select>
-                </div>
-                <div className="grid gap-1">
-                  <Label className="text-[11px] font-bold text-slate-700">Primary Meme Theme / Niche</Label>
-                  <Select
-                    value={draft.meme_theme_id || "tech-startups"}
-                    onChange={(e) => onChange({ ...draft, meme_theme_id: e.target.value })}
-                    className="h-8 text-xs bg-white"
-                  >
-                    <option value="tech-startups">🚀 Tech Startups & Dev Life</option>
-                    <option value="workplace-humor">💼 Workplace & Office Humor</option>
-                    <option value="relatable-life">☕ Relatable Everyday Life</option>
-                    <option value="fitness-diet">💪 Fitness & Gym Realities</option>
-                    <option value="marketing-sales">📈 Marketing & Sales Irony</option>
-                    <option value="real-estate">🏡 Real Estate & Agents</option>
-                    <option value="ecommerce-retail">🛍️ E-Commerce & Shopping</option>
-                  </Select>
-                </div>
-              </div>
-            )}
+        {/* Right Column (5 cols): Pure Live Facebook Feed Mockup */}
+        <div className="lg:col-span-5 sticky top-6 grid gap-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Globe className="size-3.5 text-blue-600" />
+              Live Persona Voice Simulation
+            </span>
+            <Badge variant="outline" className="text-[10px] text-slate-500 font-normal">
+              Voice Simulation
+            </Badge>
           </div>
 
-          {/* Step 1: Page Niche & Topic Focus */}
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                1. Page Niche & Topic Focus <span className="text-red-500">*</span>
-              </Label>
-              <span className="text-[11px] text-slate-500">What is this page about?</span>
-            </div>
-            <Input
-              value={draft.niche || ""}
-              onChange={(e) => onChange({ ...draft, niche: e.target.value })}
-              placeholder={draft.content_mode === "meme" ? "e.g. Relatable software engineer struggles, product management satire, startup humor" : "e.g. Daily productivity tips, tech founder growth hacks, and startup advice"}
-              className="text-sm font-medium"
-            />
-          </div>
-
-          {/* Step 2: Tone of Voice */}
-          <div className="grid gap-2">
-            <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">
-              2. Brand Tone of Voice (Select up to 4)
-            </Label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                "Authoritative",
-                "Inspiring",
-                "Casual",
-                "Direct",
-                "Friendly",
-                "Humorous",
-                "Value-Packed",
-                "Educational",
-                "Professional",
-              ].map((tone) => {
-                const currentTones = Array.isArray(draft.tone_tags) ? draft.tone_tags : []
-                const isSelected = currentTones.includes(tone)
-                return (
-                  <button
-                    key={tone}
-                    type="button"
-                    onClick={() => toggleTone(tone)}
-                    className={cn(
-                      "rounded-lg px-3 py-1.5 text-xs font-semibold transition-all border",
-                      isSelected
-                        ? "bg-purple-700 text-white border-purple-700 shadow-xs"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    )}
-                  >
-                    {isSelected && <Check className="size-3.5 inline mr-1" />}
-                    {tone}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Step 3: Audience & Goal */}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">Target Audience</Label>
-              <Input
-                value={config.audience || ""}
-                onChange={(e) => onChange({ ...draft, prompt_config: { ...config, audience: e.target.value } })}
-                placeholder="e.g. Startup founders & indie creators"
-                className="text-sm"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">Primary Goal</Label>
-              <Select
-                value={config.goal || "Drive Comments & Discussion"}
-                onChange={(e) => onChange({ ...draft, prompt_config: { ...config, goal: e.target.value } })}
-                className="text-sm"
-              >
-                <option value="Drive Comments & Discussion">Drive Comments & Discussion</option>
-                <option value="Educate & Provide Actionable Advice">Educate & Provide Actionable Advice</option>
-                <option value="Inspire & Motivate">Inspire & Motivate</option>
-                <option value="Promote Brand Products & Services">Promote Brand Products & Services</option>
-              </Select>
-            </div>
-          </div>
-
-          {/* Posting Schedule */}
-          <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calendar className="size-4 text-slate-600" />
-                <Label className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Autonomous Posting Schedule
-                </Label>
-              </div>
-              <span className="text-[11px] text-slate-500">Active Days</span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => {
-                const isActive = schedule.active_days.includes(day)
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                    onClick={() => toggleDay(day)}
-                    className={cn(
-                      "flex-1 py-1.5 text-xs font-semibold rounded-md transition-all border text-center",
-                      isActive
-                        ? "bg-blue-600 text-white border-blue-600 shadow-xs"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                    )}
-                  >
-                    {day}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* --- Collapsible Advanced Developer Settings Accordion --- */}
-          <div className="rounded-lg border border-slate-200 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition-colors"
-            >
-              <span className="flex items-center gap-2">
-                <Settings2 className="size-4 text-slate-500" />
-                ⚙️ Advanced Prompt Rules & Developer Settings (Optional)
-              </span>
-              {showAdvanced ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
-            </button>
-
-            {showAdvanced && (
-              <div className="p-4 grid gap-4 bg-white border-t border-slate-200 animate-in fade-in duration-200">
-                <div className="grid gap-2">
-                  <Label className="text-xs font-medium">Custom Prompt Instructions</Label>
-                  <Textarea
-                    value={draft.custom_instructions || ""}
-                    onChange={(e) => onChange({ ...draft, custom_instructions: e.target.value })}
-                    placeholder="Enter any specific phrasing guidelines or brand rules in your own words..."
-                    className="min-h-24 text-xs font-mono"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label className="text-xs font-medium">Persona Name & Priority</Label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      value={draft.persona_name || ""}
-                      onChange={(e) => onChange({ ...draft, persona_name: e.target.value })}
-                      placeholder="Persona Name"
-                      className="text-xs"
+          {/* Genuine Facebook Post Card */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all">
+            {/* Facebook Post Header */}
+            <div className="flex items-center justify-between p-3.5 pb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="size-10 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden ring-1 ring-slate-100 shrink-0">
+                  {selectedPage?.page_picture_url ? (
+                    <img
+                      src={selectedPage.page_picture_url}
+                      alt={selectedPage.page_name}
+                      className="size-full object-cover"
                     />
-                    <Select
-                      value={draft.priority_level || "Normal"}
-                      onChange={(e) => onChange({ ...draft, priority_level: e.target.value as any })}
-                      className="text-xs"
-                    >
-                      <option value="High">High Priority</option>
-                      <option value="Normal">Normal Priority</option>
-                      <option value="Low">Low Priority</option>
-                    </Select>
-                  </div>
+                  ) : (
+                    (selectedPage?.page_name || "P")[0].toUpperCase()
+                  )}
                 </div>
-
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-xs font-semibold text-slate-800">Engagement Learning Mode</p>
-                    <p className="text-[11px] text-slate-500">
-                      Continuously adapts prompts based on Facebook comment & like analytics.
-                    </p>
+                <div>
+                  <div className="flex items-center gap-1">
+                    <h4 className="text-xs font-bold text-slate-900 leading-tight">
+                      {selectedPage?.page_name || "Your Facebook Page"}
+                    </h4>
+                    <span className="size-3 rounded-full bg-blue-500 text-white flex items-center justify-center text-[8px]">
+                      ✓
+                    </span>
                   </div>
-                  <Switch
-                    checked={draft.learning_mode_enabled}
-                    onCheckedChange={(checked) => onChange({ ...draft, learning_mode_enabled: checked })}
-                  />
+                  <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                    <span>Just now</span>
+                    <span>·</span>
+                    <Globe className="size-3" />
+                  </p>
                 </div>
               </div>
-            )}
-          </div>
-        </CardContent>
+              <button type="button" className="text-slate-400 hover:text-slate-600 p-1">
+                <MoreHorizontal className="size-4" />
+              </button>
+            </div>
 
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className="bg-purple-700 hover:bg-purple-800 text-white font-semibold shadow-xs"
-            onClick={onSave}
-            disabled={saving}
-          >
-            {saving ? <Loader2 className="size-4 animate-spin mr-1.5" /> : <Check className="size-4 mr-1.5" />}
-            Save Persona & Schedule
-          </Button>
+            {/* Facebook Post Caption */}
+            <div className="px-3.5 py-2 text-xs leading-relaxed text-slate-900 whitespace-pre-wrap min-h-[120px]">
+              {simulatedPostText.split(" ").map((word, i) => {
+                if (word.startsWith("#")) {
+                  return (
+                    <span key={i} className="text-[#1877F2] font-medium hover:underline cursor-pointer">
+                      {word}{" "}
+                    </span>
+                  )
+                }
+                return word + " "
+              })}
+            </div>
+
+            {/* Persona Traits Match Footer */}
+            <div className="border-t border-slate-100 bg-gradient-to-r from-purple-50 to-indigo-50/70 p-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="size-4 text-purple-600 shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-purple-900 block leading-tight">
+                    {activeDraft.persona_name || "Custom Persona"}
+                  </span>
+                  <span className="text-[10px] text-purple-700">
+                    {activeDraft.content_mode === "meme" ? "Viral Humor Satire" : (activeDraft.content_mode === "hybrid" ? "Hybrid Mixed Mode" : "High-Converting Standard")}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1">
+                {(Array.isArray(activeDraft.tone_tags) ? activeDraft.tone_tags : []).slice(0, 2).map((tone) => (
+                  <span key={tone} className="text-[10px] font-semibold text-purple-800 bg-white px-2 py-0.5 rounded border border-purple-200 shadow-2xs">
+                    {tone}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Facebook Engagement Counters */}
+            <div className="flex items-center justify-between px-3.5 py-2 text-[11px] text-slate-500 border-t border-slate-100">
+              <div className="flex items-center gap-1.5">
+                <span className="flex size-4 items-center justify-center rounded-full bg-blue-500 text-white text-[9px]">
+                  👍
+                </span>
+                <span>218</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span>46 comments</span>
+                <span>19 shares</span>
+              </div>
+            </div>
+
+            {/* Facebook Action Buttons */}
+            <div className="grid grid-cols-3 p-1 text-slate-600 text-xs font-semibold border-t border-slate-100">
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <ThumbsUp className="size-4" />
+                Like
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <MessageSquare className="size-4" />
+                Comment
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <Share2 className="size-4" />
+                Share
+              </button>
+            </div>
+          </div>
         </div>
-      </Card>
+      </div>
     </div>
   )
 }

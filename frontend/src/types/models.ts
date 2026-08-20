@@ -26,6 +26,9 @@ export type Post = {
   link_url?: string | null
   page_name?: string | null
   page_picture_url?: string | null
+  facebook_connection_id?: number | null
+  page_connection_id?: number | null
+  page_id?: string | null
   persona_name?: string | null
   failure_reason?: string | null
   ai_generated: boolean

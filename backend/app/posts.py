@@ -368,6 +368,51 @@ def _mark_connection_needs_reconnection(
         db.commit()
 
 
+async def ensure_stored_media_urls(media_urls: list[str] | None, user_id: int | None = None) -> list[str]:
+    """
+    Ensures that any Base64 Data URIs in media_urls are converted to persistent
+    storage URLs (Supabase storage or public URLs) instead of bloating database rows.
+    """
+    if not media_urls:
+        return []
+
+    import base64
+    import uuid
+    from app.config import SUPABASE_URL, SUPABASE_SERVICE_KEY
+    from app.routers.images import async_upload_to_supabase
+
+    cleaned_urls: list[str] = []
+    for item in media_urls:
+        if not item or not isinstance(item, str):
+            continue
+        item_str = item.strip()
+        if item_str.startswith("data:image/"):
+            try:
+                header, encoded = item_str.split(",", 1)
+                content_type = "image/png"
+                ext = "png"
+                if "image/jpeg" in header or "image/jpg" in header:
+                    content_type = "image/jpeg"
+                    ext = "jpg"
+                elif "image/webp" in header:
+                    content_type = "image/webp"
+                    ext = "webp"
+
+                img_bytes = base64.b64decode(encoded)
+                if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+                    filename = f"{user_id or 'shared'}/{uuid.uuid4().hex}.{ext}"
+                    uploaded_url = await async_upload_to_supabase(filename, img_bytes, content_type=content_type)
+                    cleaned_urls.append(uploaded_url)
+                else:
+                    cleaned_urls.append(item_str)
+            except Exception as e:
+                logging.warning("Failed to auto-upload base64 media to storage: %s", e)
+                cleaned_urls.append(item_str)
+        else:
+            cleaned_urls.append(item_str)
+    return cleaned_urls
+
+
 def _build_facebook_post_request(
     connection: models.FacebookConnection,
     token: str,
@@ -806,12 +851,14 @@ async def publish_message_to_facebook(
     link_preview_data: dict | None = None,
 ) -> tuple[bool, models.PostLog, str | None]:
     token = _resolve_page_access_token(connection)
+    clean_media = await ensure_stored_media_urls(media_urls, user_id)
     post_log = models.PostLog(
         user_id=user_id,
         facebook_connection_id=connection.id,
         content=message,
         status="draft",
-        media_urls=media_urls or [],
+        media_urls=clean_media,
+        image_url=clean_media[0] if clean_media else None,
         link_url=link_url,
         link_preview_data=link_preview_data,
     )

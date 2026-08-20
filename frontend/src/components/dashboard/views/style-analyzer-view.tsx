@@ -1,118 +1,178 @@
 "use client"
 
 import * as React from "react"
-
-import {
-  PageConnection, Post, AIPersona, PromptStudioConfig, PerformanceInsights,
-  Analytics, DashboardIntelligence, StyleAnalysis, TrackerDashboard, ScheduledSlotItem, GlobalModelSettings
-} from "@/types/models"
-import { PageTitle, PageMini, PageStatusBadge, formatDate, todayLabel, isPastScheduledSlot, slotStatusClass, MiniBars, emptySchedule, scheduleDayLabel, activeDaysToAbbrev, abbrevDaysToFull, scheduleFromLegacyPersona, LearnedInsightsPanel, ConnectEmpty, FacebookConnectButton, Stat, PostRow, Empty, SkeletonPage, badgeClass } from "@/components/dashboard/shared/dashboard-ui"
-
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles, CheckCircle2, ArrowRight, Save, RotateCcw, Target, BookOpen, Layers, MessageSquareQuote } from "lucide-react"
-import { toast } from "sonner"
+import {
+  Sparkles,
+  Loader2,
+  CheckCircle2,
+  ArrowRight,
+  Save,
+  RotateCcw,
+  Target,
+  BookOpen,
+  Layers,
+  MessageSquareQuote,
+  Send,
+  Calendar,
+  Globe,
+  MoreHorizontal,
+  ThumbsUp,
+  MessageSquare,
+  Share2,
+  Settings2,
+  Zap,
+  Edit3,
+  Sliders,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
-import { api } from "@/lib/api"
+import { Select } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { api, getApiErrorMessage } from "@/lib/api"
+import { PageConnection } from "@/types/models"
+import { toast } from "sonner"
 
+const SAMPLE_PRESETS = [
+  {
+    label: "🚀 Tech & Startup Insights",
+    content:
+      "Most startups fail not because they couldn't build the product, but because they built something nobody wanted.\n\nTalk to 10 customers before writing a single line of code. Ship an ugly MVP in 2 weeks instead of a polished app in 6 months.\n\nSpeed of iteration > perfection. What was your biggest lesson launching your first product? #StartupGrind #TechFounders",
+  },
+  {
+    label: "🌿 Nature & Science Facts",
+    content:
+      "Did you know that trees in a forest communicate and share nutrients through an underground fungal network nicknamed the 'Wood Wide Web'?\n\nWhen a tree is attacked by pests, it sends chemical warning signals to neighboring trees so they can mount defenses.\n\nNature's cooperative intelligence is far more advanced than we realize. What's your favorite natural phenomenon? #NatureFacts #ScienceWonder",
+  },
+  {
+    label: "💼 Direct-Response Value",
+    content:
+      "Stop wasting 4 hours a day on manual social media scheduling.\n\nHere is our 3-step automation blueprint to 10x your organic reach:\n1. Curate high-performing content angles\n2. Batch produce visual posters with AI\n3. Schedule across peak engagement hours\n\nDrop a 'BLUEPRINT' in the comments and I'll DM you the free checklist! #SocialMediaStrategy #GrowthHacks",
+  },
+  {
+    label: "🔥 Relatable Storytelling",
+    content:
+      "I almost quit 3 years ago.\n\nNo clients, $200 in the bank account, and everyone telling me to get a 'real job'.\n\nThe turning point? I stopped trying to please everyone and focused on one specific problem for one specific group of people.\n\nIf you're in the messy middle right now, keep pushing. The breakthrough happens right after you feel like giving up. #FounderStory #KeepGoing",
+  },
+]
 
 export function StyleAnalyzerView({
-  pages,
+  pages = [],
   onUseInComposer,
   onOpenPromptStudio,
 }: {
-  pages: PageConnection[]
+  pages?: PageConnection[]
   onUseInComposer?: (promptText: string) => void
   onOpenPromptStudio?: () => void
 }) {
   const router = useRouter()
-  const [step, setStep] = StepState()
-  const [primaryPost, setPrimaryPost] = React.useState("")
-  const [extraPosts, setExtraPost] = React.useState("")
-  const [loadingStep, setLoadingStep] = React.useState("")
-  const [error, setError] = React.useState<string | null>(null)
-  const [analysisResult, setAnalysisResult] = React.useState<any | null>(null)
-  const [savingQuick, setSavingQuick] = React.useState(false)
+  const [selectedPageId, setSelectedPageId] = useState<number | null>(
+    pages.find((p) => p.connection_status === "connected")?.id ?? pages[0]?.id ?? null
+  )
+  const selectedPage = pages.find((p) => p.id === selectedPageId) || pages[0]
 
-  const activePage = pages.find((p) => p.connection_status === "connected") || pages[0]
+  const [primaryPost, setPrimaryPost] = useState("")
+  const [extraPosts, setExtraPosts] = useState("")
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [loadingStep, setLoadingStep] = useState("")
+  const [analysisResult, setAnalysisResult] = useState<any | null>(null)
+  const [savingQuick, setSavingQuick] = useState(false)
 
-  function StepState() {
-    return React.useState<"input" | "more_posts" | "analyzing" | "result">("input")
-  }
-
-  React.useEffect(() => {
-    if (step !== "analyzing") { setLoadingStep(""); return }
+  // Animated loading step ticker
+  useEffect(() => {
+    if (!analyzing) {
+      setLoadingStep("")
+      return
+    }
     const steps = [
-      "Reading your writing style...",
-      "Detecting tone and patterns...",
-      "Identifying your content topics...",
-      "Mapping your audience signals...",
-      "Building your persona profile...",
+      "Reading writing rhythm and structure...",
+      "Detecting vocabulary, tone, and formatting...",
+      "Mapping core topics & audience signals...",
+      "Synthesizing unique Persona DNA profile...",
     ]
     let i = 0
     setLoadingStep(steps[0])
     const interval = setInterval(() => {
-      i = Math.min(i + 1, steps.length - 1)
+      i = (i + 1) % steps.length
       setLoadingStep(steps[i])
-    }, 2200)
+    }, 2000)
     return () => clearInterval(interval)
-  }, [step])
+  }, [analyzing])
 
-  async function startAnalysis() {
-    if (!primaryPost.trim()) return toast.error("Please paste at least one post first.")
-    setStep("more_posts")
-  }
+  async function handleAnalyze() {
+    if (!primaryPost.trim()) {
+      return toast.error("Please paste at least one sample post first.")
+    }
 
-  async function runAnalysis(skipExtra = false) {
-    setStep("analyzing")
-    setError(null)
+    setAnalyzing(true)
+    setAnalysisResult(null)
+
     try {
       const allPosts = [primaryPost.trim()]
-      if (!skipExtra && extraPosts.trim()) {
+      if (extraPosts.trim()) {
         const extras = extraPosts.split(/\n\n+/).filter((p) => p.trim())
         allPosts.push(...extras)
       }
+
       const response = await api.post("/api/ai/generate-persona-from-posts", { posts: allPosts })
       setAnalysisResult(response.data)
       localStorage.setItem("ai_persona_prefill", JSON.stringify(response.data))
-      setStep("result")
-      toast.success("Persona DNA successfully generated!")
+      toast.success("Persona DNA analyzed & extracted successfully!")
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Could not generate persona. Check your AI model in Settings and try again.")
-      setStep("input")
+      toast.error(
+        getApiErrorMessage(err, "Could not analyze style. Please verify your AI API key and try again.")
+      )
+    } finally {
+      setAnalyzing(false)
     }
   }
 
   async function quickSavePersona() {
-    if (!activePage?.id) {
-      toast.error("Please connect a Facebook Page first in Settings.")
-      return
+    if (!selectedPage?.id) {
+      return toast.error("Connect a Facebook Page before saving personas.")
     }
     if (!analysisResult) return
+
     setSavingQuick(true)
     try {
       const payload = {
         persona_name: analysisResult.persona_name || "Style Analyzer Persona",
         niche: analysisResult.niche || "General Content",
-        tone_tags: Array.isArray(analysisResult.tone_tags) && analysisResult.tone_tags.length ? analysisResult.tone_tags : ["Professional"],
+        tone_tags:
+          Array.isArray(analysisResult.tone_tags) && analysisResult.tone_tags.length
+            ? analysisResult.tone_tags
+            : ["Professional"],
         custom_instructions: analysisResult.custom_instructions || null,
-        hashtags_enabled: typeof analysisResult.hashtags_enabled === "boolean" ? analysisResult.hashtags_enabled : false,
-        hashtag_count: typeof analysisResult.hashtag_count === "number" ? analysisResult.hashtag_count : 3,
-        always_include_engagement_hook: typeof analysisResult.always_include_engagement_hook === "boolean" ? analysisResult.always_include_engagement_hook : false,
-        creativity_level: typeof analysisResult.creativity_level === "number" ? analysisResult.creativity_level : 7,
+        hashtags_enabled:
+          typeof analysisResult.hashtags_enabled === "boolean"
+            ? analysisResult.hashtags_enabled
+            : false,
+        hashtag_count:
+          typeof analysisResult.hashtag_count === "number" ? analysisResult.hashtag_count : 3,
+        always_include_engagement_hook:
+          typeof analysisResult.always_include_engagement_hook === "boolean"
+            ? analysisResult.always_include_engagement_hook
+            : false,
+        creativity_level:
+          typeof analysisResult.creativity_level === "number"
+            ? analysisResult.creativity_level
+            : 7,
         language: analysisResult.language || "English",
         assigned_days: ["Mon", "Wed", "Fri"],
         posting_time_slots: ["09:00"],
         prompt_config: analysisResult.prompt_config || {},
       }
-      await api.post(`/api/ai/personas/${activePage.id}`, payload)
+      await api.post(`/api/ai/personas/${selectedPage.id}`, payload)
       localStorage.removeItem("ai_persona_prefill")
-      toast.success("Persona created & saved to your page schedule (Mon, Wed, Fri at 9:00 AM)!")
+      toast.success("Persona saved to page successfully!")
       router.push("/dashboard/ai-settings")
     } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Could not save persona automatically.")
+      toast.error(getApiErrorMessage(err, "Could not save persona automatically."))
     } finally {
       setSavingQuick(false)
     }
@@ -122,7 +182,9 @@ export function StyleAnalyzerView({
     if (!analysisResult) return
     const tones = Array.isArray(analysisResult.tone_tags) ? analysisResult.tone_tags.join(", ") : ""
     const niche = analysisResult.niche || ""
-    const promptSummary = `Write an engaging post about ${niche}. Tone: ${tones}. Style: ${analysisResult.custom_instructions || "Direct, clear, value-packed"}`
+    const promptSummary = `Write an engaging post about ${niche}. Tone: ${tones}. Style: ${
+      analysisResult.custom_instructions || "Direct, clear, high-value"
+    }`
     if (onUseInComposer) {
       onUseInComposer(promptSummary)
     } else {
@@ -137,279 +199,444 @@ export function StyleAnalyzerView({
     if (onOpenPromptStudio) {
       onOpenPromptStudio()
     } else {
-      router.push("/dashboard/create?tab=personas")
+      router.push("/dashboard/ai-settings")
     }
   }
 
-  if (step === "analyzing") {
-    return (
-      <>
-        <PageTitle title="Style Analyzer" subtitle="Analyzing your posts and building your AI persona…" aiPowered />
-        <Card>
-          <CardContent className="flex flex-col items-center gap-8 py-16">
-            <div className="size-20 rounded-full bg-purple-100 flex items-center justify-center">
-              <Sparkles className="size-9 text-purple-600 animate-pulse" />
-            </div>
-            <div className="text-center grid gap-2">
-              <p className="text-lg font-semibold text-slate-800">{loadingStep}</p>
-              <p className="text-sm text-slate-500">This usually takes 10–20 seconds…</p>
-            </div>
-            <div className="w-full max-w-xs h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-2 bg-purple-600 rounded-full animate-pulse" style={{ width: "65%" }} />
-            </div>
-          </CardContent>
-        </Card>
-      </>
-    )
+  function resetAnalysis() {
+    setAnalysisResult(null)
+    setPrimaryPost("")
+    setExtraPosts("")
   }
 
-  if (step === "result" && analysisResult) {
-    const config = analysisResult.prompt_config || {}
-    return (
-      <>
-        <PageTitle 
-          title="Persona DNA Extracted" 
-          subtitle="Your writing style has been analyzed. You can generate a post immediately or save it as a persona." 
-          aiPowered 
-        />
+  const wordCount = primaryPost.trim() ? primaryPost.trim().split(/\s+/).length : 0
+  const postCount = primaryPost.trim()
+    ? primaryPost.split(/\n\n+/).filter((p) => p.trim()).length
+    : 0
 
-        <div className="grid gap-6">
-          {/* Main Summary Header */}
-          <Card className="border-purple-200 bg-purple-50/50 shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wider text-purple-600">Generated Profile</span>
-                  <CardTitle className="text-2xl mt-1 flex items-center gap-2">
-                    <Sparkles className="size-6 text-purple-600" />
-                    {analysisResult.persona_name}
-                  </CardTitle>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setStep("input")}>
-                    <RotateCcw className="size-3.5 mr-1.5" />
-                    Analyze Another
-                  </Button>
-                  <Button variant="outline" size="sm" className="border-purple-300 text-purple-700 hover:bg-purple-100" onClick={openInPromptStudio}>
-                    <ArrowRight className="size-3.5 mr-1.5" />
-                    Edit in Personas
-                  </Button>
-                  <Button size="sm" className="bg-purple-700 hover:bg-purple-800 text-white font-bold shadow-xs" onClick={handleUseInComposer}>
-                    <Sparkles className="size-3.5 mr-1.5" />
-                    Create Post with this Style
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={quickSavePersona} disabled={savingQuick}>
-                    <Save className="size-3.5 mr-1.5" />
-                    {savingQuick ? "Saving..." : "Save to Page"}
-                  </Button>
+  // Mock sample post preview text based on detected DNA
+  const sampleSimulatedCopy = analysisResult
+    ? `${analysisResult.prompt_config?.examples || primaryPost.trim() || `Here is a high-converting sample post crafted specifically for ${analysisResult.niche || "your audience"}.\n\nIt follows the ${analysisResult.prompt_config?.structure || "Hook -> Value -> CTA"} framework with a ${Array.isArray(analysisResult.tone_tags) ? analysisResult.tone_tags.join(" & ") : "distinct"} tone.`}\n\n${
+        analysisResult.hashtags_enabled
+          ? (analysisResult.prompt_config?.always_topics || ["Strategy", "Growth"])
+              .slice(0, analysisResult.hashtag_count || 3)
+              .map((t: string) => `#${t.replace(/[^a-zA-Z0-9]/g, "")}`)
+              .join(" ")
+          : ""
+      }`
+    : ""
+
+  return (
+    <div className="grid gap-6">
+      {/* Main Studio 2-Column Grid */}
+      <div className="grid gap-6 lg:grid-cols-12 items-start">
+        {/* Left Column (7 cols): Input, Analysis & Persistent 1-Line Action Bar */}
+        <div className="lg:col-span-7 flex flex-col gap-5">
+          {/* 1. Writing Samples Input Card */}
+          <Card className="shadow-xs border border-purple-200 bg-white">
+            <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Sparkles className="size-3.5 text-purple-600" />
+                  Writing Samples &amp; Style Input
+                </Label>
+                <div className="w-44">
+                  <Select
+                    value={selectedPageId ? String(selectedPageId) : ""}
+                    onChange={(e) => setSelectedPageId(e.target.value ? Number(e.target.value) : null)}
+                    className="h-8 text-xs font-semibold bg-white border-slate-200"
+                  >
+                    <option value="">Auto (Default Page)</option>
+                    {pages.map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.page_name}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
               </div>
-              <CardDescription className="text-slate-600 text-sm mt-2">
-                {analysisResult.niche}
-              </CardDescription>
             </CardHeader>
+            <CardContent className="p-4 grid gap-4">
+              <div className="relative">
+                <Textarea
+                  value={primaryPost}
+                  onChange={(e) => setPrimaryPost(e.target.value)}
+                  placeholder="Paste 1 or more real posts here... (Separate multiple posts with a blank line)"
+                  className="w-full min-h-[140px] text-sm p-3 rounded-md border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-purple-500/20 resize-none shadow-inner"
+                  disabled={analyzing}
+                />
+              </div>
+
+              {/* Quick Sample Preset Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[11px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+                  <Zap className="size-3 text-purple-500" />
+                  Try Samples:
+                </span>
+                {SAMPLE_PRESETS.map((preset, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setPrimaryPost(preset.content)}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition-colors"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+                    className="text-xs text-slate-600 font-semibold"
+                  >
+                    <Settings2 className="size-3.5 mr-1.5" />
+                    Advanced Samples
+                  </Button>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {primaryPost.trim()
+                      ? `${wordCount} words · ${postCount} post${postCount > 1 ? "s" : ""}`
+                      : "Paste writing samples above"}
+                  </span>
+                </div>
+
+                <Button
+                  onClick={handleAnalyze}
+                  disabled={analyzing || !primaryPost.trim()}
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold h-9 shadow-xs px-5 text-xs"
+                >
+                  {analyzing ? (
+                    <>
+                      <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                      Analyzing Style...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="size-3.5 mr-1.5" />
+                      Extract Persona DNA
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {/* Advanced Samples Collapsible */}
+              {isAdvancedOpen && (
+                <div className="pt-3 border-t border-slate-100 grid gap-2 animate-in fade-in duration-200 slide-in-from-top-3">
+                  <Label className="text-xs font-bold uppercase text-slate-600">
+                    Additional Context / Extra Posts (Optional)
+                  </Label>
+                  <Textarea
+                    value={extraPosts}
+                    onChange={(e) => setExtraPosts(e.target.value)}
+                    placeholder="Paste additional sample posts, comments, or emails for a richer sample profile..."
+                    className="min-h-[90px] text-xs"
+                    disabled={analyzing}
+                  />
+                </div>
+              )}
+            </CardContent>
           </Card>
 
-          {/* DNA Traits Grid */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* Tone Traits */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-                  <Sparkles className="size-4 text-purple-600" />
-                  Detected Tone & Style
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3">
-                <div className="flex flex-wrap gap-1.5">
-                  {(analysisResult.tone_tags || []).map((tone: string) => (
-                    <span key={tone} className="rounded-full bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800">
-                      {tone}
-                    </span>
-                  ))}
+          {/* 2. Extracted Persona DNA Profile Card (When analyzed) */}
+          {analysisResult && (
+            <Card className="shadow-xs border border-purple-200 bg-white animate-in fade-in duration-300">
+              <CardHeader className="py-3 px-4 border-b border-purple-100 bg-gradient-to-r from-purple-50 to-indigo-50/50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="size-7 rounded-md bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                      <Sparkles className="size-4" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base font-semibold leading-5 text-slate-900">
+                        {analysisResult.persona_name || "Custom Style Persona"}
+                      </CardTitle>
+                      <CardDescription className="text-xs text-purple-700 font-medium">
+                        {analysisResult.niche || "General Content Strategy"}
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <Badge className="bg-purple-700 text-white text-[10px]">
+                    Creativity: {analysisResult.creativity_level || 7}/10
+                  </Badge>
                 </div>
+              </CardHeader>
+              <CardContent className="p-4 grid gap-4">
+                {/* Tone Tags */}
+                <div className="grid gap-1.5">
+                  <Label className="text-[11px] font-bold uppercase text-slate-600">Detected Tone &amp; Voice</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(analysisResult.tone_tags || []).map((tone: string) => (
+                      <span
+                        key={tone}
+                        className="rounded-full bg-purple-100 border border-purple-200 px-2.5 py-0.5 text-xs font-semibold text-purple-800 shadow-xs"
+                      >
+                        {tone}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Stylistic Directives */}
                 {analysisResult.custom_instructions && (
-                  <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded border border-slate-100 italic">
-                    "{analysisResult.custom_instructions}"
-                  </p>
+                  <div className="grid gap-1.5">
+                    <Label className="text-[11px] font-bold uppercase text-slate-600">Style &amp; Formatting Habits</Label>
+                    <p className="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-200 italic leading-relaxed">
+                      "{analysisResult.custom_instructions}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Strategy Breakdown Grid */}
+                <div className="grid sm:grid-cols-2 gap-3 pt-1 border-t border-slate-100 text-xs text-slate-600">
+                  <div className="flex items-start gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <Target className="size-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-slate-800 block">Audience &amp; Goal:</span>
+                      <span className="text-[11px] text-slate-500">
+                        {analysisResult.prompt_config?.audience || "Social followers"} ·{" "}
+                        {analysisResult.prompt_config?.goal || "Engagement"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    <Layers className="size-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-slate-800 block">Content Structure:</span>
+                      <span className="text-[11px] text-slate-500">
+                        {analysisResult.prompt_config?.structure || "Hook -> Value -> CTA"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Core Topics */}
+                {analysisResult.prompt_config?.always_topics && (
+                  <div className="grid gap-1.5 pt-1 border-t border-slate-100">
+                    <Label className="text-[11px] font-bold uppercase text-slate-600">Core Content Pillars</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {analysisResult.prompt_config.always_topics.map((t: string) => (
+                        <span
+                          key={t}
+                          className="rounded-md bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+                        >
+                          #{t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </CardContent>
             </Card>
+          )}
 
-            {/* Target Audience & Goal */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-                  <Target className="size-4 text-blue-600" />
-                  Audience & Strategy
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2 text-sm text-slate-600">
-                <p><strong>Audience:</strong> {config.audience || "General Social Audience"}</p>
-                <p><strong>Goal:</strong> {config.goal || "Engagement & Community"}</p>
-                <p><strong>Creativity:</strong> {analysisResult.creativity_level || 7}/10</p>
-              </CardContent>
-            </Card>
+          {/* 3. Always Visible 1-Line Sticky Action Bar */}
+          <div className="sticky bottom-4 z-40 mt-auto bg-white/95 backdrop-blur-md border border-slate-200 shadow-[0_4px_24px_rgba(0,0,0,0.12)] px-4 py-2.5 rounded-xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={resetAnalysis}
+                disabled={!primaryPost.trim() && !analysisResult}
+                className="text-slate-700 bg-white shadow-xs text-xs h-8"
+              >
+                <RotateCcw className="size-3.5 mr-1.5" />
+                Clear
+              </Button>
 
-            {/* Structure & Content */}
-            <Card className="md:col-span-2 lg:col-span-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-                  <Layers className="size-4 text-emerald-600" />
-                  Content Pattern
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-2 text-sm text-slate-600">
-                <p><strong>Structure:</strong> {config.structure || "Hook -> Value -> CTA"}</p>
-                <p><strong>Hashtags:</strong> {analysisResult.hashtags_enabled ? `${analysisResult.hashtag_count || 3} relevant tags` : "Disabled"}</p>
-                <p><strong>Engagement Hook:</strong> {analysisResult.always_include_engagement_hook ? "Always included" : "Optional"}</p>
-              </CardContent>
-            </Card>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={openInPromptStudio}
+                className="text-slate-700 bg-white shadow-xs text-xs h-8"
+              >
+                <Edit3 className="size-3.5 mr-1.5" />
+                Personas
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={quickSavePersona}
+                disabled={savingQuick || !analysisResult}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold shadow-xs text-xs h-8"
+              >
+                {savingQuick ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin mr-1.5" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="size-3.5 mr-1.5" />
+                    Save as Persona
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleUseInComposer}
+                disabled={!analysisResult}
+                className="bg-[#1877F2] hover:bg-[#166FE5] text-white font-semibold shadow-xs text-xs h-8"
+              >
+                <Send className="size-3.5 mr-1.5" />
+                Use in Create Post
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column (5 cols): Pure Live Facebook Feed Mockup */}
+        <div className="lg:col-span-5 sticky top-6 grid gap-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+              <Globe className="size-3.5 text-blue-600" />
+              Live Style Simulation Mockup
+            </span>
+            <Badge variant="outline" className="text-[10px] text-slate-500 font-normal">
+              Persona Voice Simulation
+            </Badge>
           </div>
 
-          {/* Topics & Elements */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-                  <BookOpen className="size-4 text-indigo-600" />
-                  Core Content Topics
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {(config.always_topics || []).map((topic: string) => (
-                    <span key={topic} className="rounded-md bg-indigo-50 border border-indigo-100 px-2.5 py-1 text-xs font-medium text-indigo-700">
-                      {topic}
-                    </span>
-                  ))}
-                  {(!config.always_topics || !config.always_topics.length) && (
-                    <p className="text-xs text-slate-500">Universal niche topics identified.</p>
+          {/* Genuine Facebook Post Card */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden transition-all">
+            {/* Facebook Post Header */}
+            <div className="flex items-center justify-between p-3.5 pb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="size-10 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-sm overflow-hidden ring-1 ring-slate-100 shrink-0">
+                  {selectedPage?.page_picture_url ? (
+                    <img
+                      src={selectedPage.page_picture_url}
+                      alt={selectedPage.page_name}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    (selectedPage?.page_name || "P")[0].toUpperCase()
                   )}
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2 text-slate-700">
-                  <MessageSquareQuote className="size-4 text-amber-600" />
-                  Post Elements Included
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {(config.every_post_includes || []).map((item: string) => (
-                    <span key={item} className="rounded-md bg-amber-50 border border-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800">
-                      {item}
+                <div>
+                  <div className="flex items-center gap-1">
+                    <h4 className="text-xs font-bold text-slate-900 leading-tight">
+                      {selectedPage?.page_name || "Your Facebook Page"}
+                    </h4>
+                    <span className="size-3 rounded-full bg-blue-500 text-white flex items-center justify-center text-[8px]">
+                      ✓
                     </span>
-                  ))}
+                  </div>
+                  <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                    <span>Just now</span>
+                    <span>·</span>
+                    <Globe className="size-3" />
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </>
-    )
-  }
-
-  return (
-    <>
-      <PageTitle title="Style Analyzer" subtitle="Paste your posts and let the AI build a persona that perfectly matches your writing style." aiPowered />
-
-      {step === "more_posts" ? (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-2xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="size-5 text-purple-600" />
-                Want a more accurate persona?
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4">
-              <p className="text-sm text-slate-600">
-                Your first post is ready. Add more sample posts below (optional) — the more examples you provide, the sharper and more tailored your generated persona will be.
-              </p>
-              <p className="text-xs text-slate-400">Tip: Separate each post with a blank line.</p>
-              <Textarea
-                className="min-h-44"
-                placeholder={"Post 2 content...\n\nPost 3 content...\n\nPost 4 content..."}
-                value={extraPosts}
-                onChange={(e) => setExtraPost(e.target.value)}
-              />
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button id="run-analysis-btn" className="flex-1 bg-purple-700 hover:bg-purple-800" onClick={() => runAnalysis(false)}>
-                  <Sparkles className="size-4 mr-2" />
-                  {extraPosts.trim() ? "Add More & Analyze" : "Analyze Now"}
-                </Button>
-                <Button variant="outline" className="flex-1" onClick={() => runAnalysis(true)}>
-                  Skip, Analyze with 1 Post
-                </Button>
-                <Button variant="ghost" onClick={() => setStep("input")}>Back</Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
+              <button type="button" className="text-slate-400 hover:text-slate-600 p-1">
+                <MoreHorizontal className="size-4" />
+              </button>
+            </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Paste Your Post(s)</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          <p className="text-sm text-slate-500">
-            Paste one or more of your real social-media posts. The AI will analyze tone, topics, audience, structure, and writing patterns — then automatically build a complete AI persona in Prompt Studio.
-          </p>
-          {error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
-          ) : null}
-          <Textarea
-            id="style-analyzer-input"
-            className="min-h-52"
-            placeholder={"Paste your post here…\n\nYou can also paste multiple posts — just leave a blank line between each one."}
-            value={primaryPost}
-            onChange={(e) => setPrimaryPost(e.target.value)}
-          />
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-400">
-              {primaryPost.trim()
-                ? `${primaryPost.trim().split(/\s+/).length} words · ${primaryPost.split(/\n\n+/).filter((p) => p.trim()).length} post(s) detected`
-                : "Paste your content above to get started"}
-            </p>
-            <Button
-              id="analyze-style-btn"
-              className="bg-purple-700 hover:bg-purple-800"
-              onClick={startAnalysis}
-              disabled={!primaryPost.trim()}
-            >
-              <Sparkles className="size-4 mr-2" />
-              Analyze &amp; Build Persona
-            </Button>
+            {/* Facebook Post Caption */}
+            <div className="px-3.5 py-2 text-xs leading-relaxed text-slate-900 whitespace-pre-wrap min-h-[140px]">
+              {analyzing ? (
+                <div className="py-6 text-center flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="size-5 animate-spin text-purple-600" />
+                  <p className="text-xs font-semibold text-slate-700">{loadingStep}</p>
+                  <p className="text-[10px] text-slate-400">Synthesizing writing DNA &amp; generating simulation...</p>
+                </div>
+              ) : sampleSimulatedCopy ? (
+                <span>
+                  {sampleSimulatedCopy.split(" ").map((word, i) => {
+                    if (word.startsWith("#")) {
+                      return (
+                        <span key={i} className="text-[#1877F2] font-medium hover:underline cursor-pointer">
+                          {word}{" "}
+                        </span>
+                      )
+                    }
+                    if (word.startsWith("http://") || word.startsWith("https://")) {
+                      return (
+                        <span key={i} className="text-[#1877F2] hover:underline cursor-pointer break-all">
+                          {word}{" "}
+                        </span>
+                      )
+                    }
+                    return word + " "
+                  })}
+                </span>
+              ) : (
+                <span className="text-slate-400 italic">
+                  Paste sample posts on the left and click "Extract Persona DNA" to see a live simulated post in your writing style...
+                </span>
+              )}
+            </div>
+
+            {/* Simulated Visual Placeholder if Analyzed */}
+            {analysisResult && (
+              <div className="border-t border-slate-100 bg-gradient-to-r from-purple-50 to-indigo-50/70 p-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="size-4 text-purple-600 shrink-0" />
+                  <span className="text-[11px] font-bold text-purple-900">
+                    Style Match: {analysisResult.persona_name}
+                  </span>
+                </div>
+                <span className="text-[10px] font-semibold text-purple-700 bg-white px-2 py-0.5 rounded border border-purple-200">
+                  98% DNA Match
+                </span>
+              </div>
+            )}
+
+            {/* Facebook Engagement Counters */}
+            <div className="flex items-center justify-between px-3.5 py-2 text-[11px] text-slate-500 border-t border-slate-100">
+              <div className="flex items-center gap-1.5">
+                <span className="flex size-4 items-center justify-center rounded-full bg-blue-500 text-white text-[9px]">
+                  👍
+                </span>
+                <span>142</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span>28 comments</span>
+                <span>14 shares</span>
+              </div>
+            </div>
+
+            {/* Facebook Action Buttons */}
+            <div className="grid grid-cols-3 p-1 text-slate-600 text-xs font-semibold border-t border-slate-100">
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <ThumbsUp className="size-4" />
+                Like
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <MessageSquare className="size-4" />
+                Comment
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-1.5 py-1.5 rounded-md hover:bg-slate-100 transition-colors"
+              >
+                <Share2 className="size-4" />
+                Share
+              </button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>How it works</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="grid gap-4 text-sm text-slate-600">
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 size-6 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs flex items-center justify-center mt-0.5">1</span>
-              <span>Paste one or more of your real posts. The AI reads the tone, rhythm, topics, and patterns across everything you share.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 size-6 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs flex items-center justify-center mt-0.5">2</span>
-              <span>Optionally add more posts for a richer sample — more examples = sharper persona with better audience targeting.</span>
-            </li>
-            <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 size-6 rounded-full bg-purple-100 text-purple-700 font-semibold text-xs flex items-center justify-center mt-0.5">3</span>
-              <span>A complete AI persona is generated with full DNA breakdown. Fine-tune in Prompt Studio or assign directly to your posting calendar.</span>
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
-    </>
+        </div>
+      </div>
+    </div>
   )
 }

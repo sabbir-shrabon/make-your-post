@@ -4,10 +4,11 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
-export default function StyleAnalyzerPage() {
+export default function StyleAnalyzerRedirectPage() {
   const router = useRouter()
+
   useEffect(() => {
-    router.replace("/dashboard/create?tab=style")
+    router.replace("/dashboard/ai-settings?mode=extract")
   }, [router])
 
   return (

@@ -40,7 +40,7 @@ export function AppNav() {
           key={item.href}
           href={item.href}
           className={cn(
-            "rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground",
+            "rounded-lg px-3 py-2 text-sm font-semibold leading-[18px] text-muted-foreground hover:bg-muted hover:text-foreground",
             pathname === item.href && "bg-muted text-foreground"
           )}
         >

@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
-import { GeistMono, GeistSans } from "geist/font";
+import { Inter } from "next/font/google";
+import { GeistMono } from "geist/font";
 import "./globals.css";
 import { Providers } from "./providers";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "Auto Poster",
@@ -16,9 +24,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${GeistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground">
+      <body className="min-h-full bg-background text-foreground font-sans text-sm antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

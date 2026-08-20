@@ -178,9 +178,12 @@ async def generate_meme(
 
 
 @router.post("/render-preview")
-def render_preview(body: ReRenderMemeRequest):
+def render_preview(
+    body: ReRenderMemeRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     """
-    Fast live preview re-rendering without calling LLM.
+    Fast live preview re-rendering without calling LLM. Requires authentication.
     """
     try:
         if body.format_style == "classic":

@@ -14,9 +14,15 @@ def _fernet_for_key(raw_key: str) -> Fernet:
     return Fernet(base64.urlsafe_b64encode(digest))
 
 
+def _get_encryption_key() -> str:
+    raw_key = (FACEBOOK_TOKEN_ENCRYPTION_KEY or SECRET_KEY or "").strip()
+    if not raw_key:
+        raise ValueError("Neither FACEBOOK_TOKEN_ENCRYPTION_KEY nor SECRET_KEY is set.")
+    return raw_key
+
+
 def _fernet() -> Fernet:
-    raw_key = FACEBOOK_TOKEN_ENCRYPTION_KEY or SECRET_KEY or "fallback-secret-key-autoposter"
-    return _fernet_for_key(raw_key)
+    return _fernet_for_key(_get_encryption_key())
 
 
 def encrypt_token(token: str) -> str:
@@ -27,11 +33,10 @@ def decrypt_token(encrypted_token: str) -> str | None:
     if not encrypted_token:
         return None
     keys_to_try = [
-        k for k in [
+        k.strip() for k in [
             FACEBOOK_TOKEN_ENCRYPTION_KEY,
             SECRET_KEY,
-            "fallback-secret-key-autoposter",
-        ] if k
+        ] if k and k.strip()
     ]
     unique_keys: list[str] = []
     for k in keys_to_try:

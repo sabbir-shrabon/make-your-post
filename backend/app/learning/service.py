@@ -73,25 +73,44 @@ async def collect_due_engagement_snapshots(db: Session) -> None:
 
 
 async def fetch_facebook_engagement(facebook_post_id: str, connection: models.FacebookConnection) -> dict[str, int]:
-    fields = "likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique)"
     access_token = decrypt_token(connection.page_access_token)
     if not access_token:
         return {"likes": 0, "comments": 0, "shares": 0, "reach": 0}
 
+    likes, comments, shares, reach = 0, 0, 0, 0
     async with httpx.AsyncClient(base_url=FACEBOOK_GRAPH_API_BASE_URL, timeout=30) as client:
-        response = await client.get(
-            facebook_post_id,
-            params={"fields": fields, "access_token": access_token},
-        )
-    if response.status_code >= 400:
-        return {"likes": 0, "comments": 0, "shares": 0, "reach": 0}
-    data = response.json()
-    reach_values = data.get("insights", {}).get("data", [{}])[0].get("values", [{}])
+        # 1. Fetch core post metrics (likes, comments, shares)
+        try:
+            response = await client.get(
+                facebook_post_id,
+                params={"fields": "likes.summary(true),comments.summary(true),shares", "access_token": access_token},
+            )
+            if response.status_code < 400:
+                data = response.json()
+                likes = int(data.get("likes", {}).get("summary", {}).get("total_count") or 0)
+                comments = int(data.get("comments", {}).get("summary", {}).get("total_count") or 0)
+                shares = int(data.get("shares", {}).get("count") or 0)
+        except Exception as exc:
+            pass
+
+        # 2. Attempt to fetch post insights (reach) independently without breaking core metrics on permission error
+        try:
+            insights_resp = await client.get(
+                facebook_post_id,
+                params={"fields": "insights.metric(post_impressions_unique)", "access_token": access_token},
+            )
+            if insights_resp.status_code < 400:
+                idata = insights_resp.json()
+                reach_values = idata.get("insights", {}).get("data", [{}])[0].get("values", [{}])
+                reach = int((reach_values[0].get("value") if reach_values else 0) or 0)
+        except Exception:
+            reach = 0
+
     return {
-        "likes": int(data.get("likes", {}).get("summary", {}).get("total_count") or 0),
-        "comments": int(data.get("comments", {}).get("summary", {}).get("total_count") or 0),
-        "shares": int(data.get("shares", {}).get("count") or 0),
-        "reach": int((reach_values[0].get("value") if reach_values else 0) or 0),
+        "likes": likes,
+        "comments": comments,
+        "shares": shares,
+        "reach": reach,
     }
 
 

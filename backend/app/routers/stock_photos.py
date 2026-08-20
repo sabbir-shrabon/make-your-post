@@ -19,7 +19,11 @@ class StockPhotoImportRequest(BaseModel):
     image_url: str
 
 @router.get("/api/stock-photos")
-async def search_stock_photos(query: str, page: int = 1):
+async def search_stock_photos(
+    query: str,
+    page: int = 1,
+    current_user: models.User = Depends(get_current_user),
+):
     photos = []
     
     # Try Pexels first

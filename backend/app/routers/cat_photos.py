@@ -3,7 +3,10 @@ import random
 from urllib.parse import quote, urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+
+from app.auth import get_current_user
+from app import models
 
 router = APIRouter(tags=["cats"])
 
@@ -28,6 +31,7 @@ async def get_cat_photos(
     page: int = Query(default=1, ge=1, le=10),
     mime_types: str = Query(default="jpg,png"),
     size: str = Query(default="med"),
+    current_user: models.User = Depends(get_current_user),
 ):
     params = {
         "limit": limit,

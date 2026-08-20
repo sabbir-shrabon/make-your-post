@@ -59,7 +59,7 @@ export function SaveCanvasAsTemplateDialog({ isOpen, onClose, canvasState, onSav
         <div className="flex items-center justify-between border-b px-5 py-4 bg-slate-50">
           <div className="flex items-center gap-2">
             <BookmarkPlus className="size-5 text-purple-600" />
-            <h3 className="font-bold text-slate-900 text-base">Save as Reusable Template</h3>
+            <h3 className="font-semibold text-slate-900 text-base leading-5">Save as Reusable Template</h3>
           </div>
           <button
             type="button"

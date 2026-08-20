@@ -24,7 +24,7 @@ from app.config import (
     FRONTEND_URL,
     SECRET_KEY,
 )
-from app.crypto import encrypt_token
+from app.crypto import encrypt_token, decrypt_token
 
 logger = logging.getLogger(__name__)
 
@@ -101,9 +101,28 @@ def _clear_oauth_session(request: Request) -> None:
 
 def _popup_error_html(message: str) -> HTMLResponse:
     return HTMLResponse(
-        f"""<!doctype html><html><body><p>{message}</p><script>
-        window.close();
-        </script></body></html>"""
+        f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Connection Error</title>
+  <style>
+    body {{ font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; }}
+    .card {{ background: white; padding: 24px; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-width: 400px; text-align: center; border: 1px solid #e2e8f0; }}
+    h2 {{ color: #dc2626; margin-top: 0; font-size: 18px; }}
+    p {{ color: #475569; font-size: 14px; line-height: 1.5; margin: 12px 0 20px 0; }}
+    button {{ background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px; }}
+    button:hover {{ background: #1d4ed8; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Facebook Connection Issue</h2>
+    <p>{message}</p>
+    <button onclick="window.close()">Close Window</button>
+  </div>
+</body>
+</html>"""
     )
 
 
@@ -376,7 +395,7 @@ def start_facebook_oauth(request: Request, user: models.User, db: Session, sessi
     state = _create_oauth_state(db, user.id)
     if session_id:
         state = f"{state}:{session_id}"
-        oauth_polling_sessions[session_id] = {"status": "pending"}
+        oauth_polling_sessions[session_id] = {"status": "pending", "user_id": user.id}
 
     request.session["oauth_state"] = state
     request.session["oauth_user_id"] = user.id
@@ -451,10 +470,41 @@ async def handle_facebook_callback(
             return _popup_error_html(str(exc.detail))
         
         if session_id:
-            oauth_polling_sessions[session_id] = {"status": "success", "pageId": connection.page_id}
+            oauth_polling_sessions[session_id] = {
+                "status": "success",
+                "pageId": connection.page_id,
+                "pageName": connection.page_name,
+            }
         return _popup_success_html(connection.page_id)
 
-    return _page_picker_html(pages, session_id)
+    if session_id:
+        oauth_polling_sessions[session_id] = {
+            "status": "requires_selection",
+            "pages": [
+                {
+                    "page_id": p["page_id"],
+                    "page_name": p["page_name"],
+                    "picture_url": _page_picture_url(p),
+                }
+                for p in pages
+            ],
+        }
+
+    return HTMLResponse(
+        """<!doctype html><html><body style="font-family:system-ui,sans-serif;text-align:center;padding:40px;background:#f8fafc;color:#0f172a;">
+        <div style="max-width:400px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;border:1px solid #e2e8f0;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);">
+            <div style="font-size:28px;margin-bottom:12px;">📄</div>
+            <h2 style="font-size:18px;margin:0 0 8px;">Discovered Multiple Facebook Pages</h2>
+            <p style="font-size:13px;color:#64748b;margin:0 0 16px;">You can now select which pages to connect directly on your dashboard.</p>
+            <button onclick="window.close()" style="background:#0f172a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">
+                Done (Close window)
+            </button>
+        </div>
+        <script>
+        setTimeout(function() { window.close(); }, 1500);
+        </script>
+        </body></html>"""
+    )
 
 
 async def handle_select_page_from_popup(
@@ -484,7 +534,7 @@ async def handle_select_page_from_popup(
         return _popup_error_html(str(exc.detail))
 
     if session_id:
-        oauth_polling_sessions[str(session_id)] = {"status": "success", "pageId": connection.page_id}
+        oauth_polling_sessions[str(session_id)] = {"status": "success", "pageId": connection.page_id, "pageName": connection.page_name}
     return _popup_success_html(connection.page_id)
 
 
@@ -525,6 +575,58 @@ def disconnect_page_connection(
         message="Page disconnected. Your post history is saved and will be restored when you reconnect.",
         paused_posts=paused_posts,
     )
+
+
+def reconnect_page_connection(
+    db: Session,
+    user_id: int,
+    connection_id: int,
+) -> models.FacebookConnection:
+    connection = (
+        db.query(models.FacebookConnection)
+        .filter(
+            models.FacebookConnection.id == connection_id,
+            models.FacebookConnection.user_id == user_id,
+        )
+        .first()
+    )
+    if connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page connection not found")
+
+    now = datetime.now(timezone.utc)
+    connection.connection_status = "connected"
+    connection.disconnected_at = None
+    connection.updated_at = now
+    _resume_paused_posts(db, connection)
+    db.commit()
+    db.refresh(connection)
+    return connection
+
+
+def delete_page_connection(
+    db: Session,
+    user_id: int,
+    connection_id: int,
+) -> dict:
+    connection = (
+        db.query(models.FacebookConnection)
+        .filter(
+            models.FacebookConnection.id == connection_id,
+            models.FacebookConnection.user_id == user_id,
+        )
+        .first()
+    )
+    if connection is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page connection not found")
+
+    # Set post_logs facebook_connection_id to NULL to preserve history
+    db.query(models.PostLog).filter(
+        models.PostLog.facebook_connection_id == connection_id
+    ).update({"facebook_connection_id": None}, synchronize_session=False)
+
+    db.delete(connection)
+    db.commit()
+    return {"success": True, "message": "Page connection removed successfully"}
 
 
 def _post_counts_for_connection(db: Session, connection_id: int) -> tuple[int, int, int]:
@@ -616,7 +718,144 @@ async def store_pending_pages_for_user(
     db.commit()
 
 
-def select_page_for_user(db: Session, user_id: int, page_id: str) -> models.FacebookConnection:
+def get_pending_pages_for_user(db: Session, user_id: int) -> list[dict]:
+    pending = db.get(models.PendingFacebookOAuth, user_id)
+    if not pending or pending.expires_at <= datetime.now(timezone.utc):
+        return []
+    
+    # Check which pages are already connected
+    existing_page_ids = set(
+        row[0]
+        for row in db.query(models.FacebookConnection.page_id)
+        .filter(
+            models.FacebookConnection.user_id == user_id,
+            models.FacebookConnection.connection_status == "connected",
+        )
+        .all()
+    )
+    
+    result = []
+    for p in (pending.pages or []):
+        pid = str(p.get("page_id"))
+        result.append({
+            "page_id": pid,
+            "page_name": str(p.get("page_name", "Unnamed Page")),
+            "picture_url": _page_picture_url(p),
+            "is_already_connected": pid in existing_page_ids,
+        })
+    return result
+
+
+async def sync_facebook_page_posts_internal(
+    db: Session,
+    user_id: int,
+    connection: models.FacebookConnection,
+    limit: int = 50,
+) -> int:
+    if not connection or not connection.page_access_token:
+        return 0
+
+    access_token = decrypt_token(connection.page_access_token)
+    if not access_token:
+        return 0
+
+    page_id = connection.page_id
+    try:
+        async with httpx.AsyncClient(base_url="https://graph.facebook.com/v18.0", timeout=15.0) as client:
+            response = await client.get(
+                f"{page_id}/posts",
+                params={
+                    "fields": "id,message,created_time,full_picture,attachments{media,subattachments},likes.summary(true),comments.summary(true),shares",
+                    "limit": limit,
+                    "access_token": access_token,
+                },
+            )
+        if response.status_code >= 400:
+            logger.warning("Facebook history sync returned status %s for page %s", response.status_code, page_id)
+            return 0
+
+        fb_posts = response.json().get("data", [])
+        synced_count = 0
+
+        for fb_post in fb_posts:
+            fb_post_id = fb_post.get("id")
+            if not fb_post_id:
+                continue
+
+            exists = (
+                db.query(models.PostLog)
+                .filter(models.PostLog.facebook_post_id == fb_post_id)
+                .first()
+            )
+            if exists:
+                if exists.facebook_connection_id != connection.id or exists.user_id != user_id:
+                    exists.facebook_connection_id = connection.id
+                    exists.user_id = user_id
+                continue
+
+            created_time_str = fb_post.get("created_time")
+            try:
+                posted_at = datetime.fromisoformat(created_time_str.replace("Z", "+00:00"))
+            except Exception:
+                posted_at = datetime.now(timezone.utc)
+
+            message = fb_post.get("message", "")
+            media_urls = []
+            full_pic = fb_post.get("full_picture")
+            if full_pic:
+                media_urls.append(full_pic)
+
+            post = models.PostLog(
+                user_id=user_id,
+                facebook_connection_id=connection.id,
+                content=message,
+                media_urls=media_urls,
+                status="published",
+                facebook_post_id=fb_post_id,
+                posted_at=posted_at,
+                created_at=posted_at,
+                updated_at=posted_at,
+                ai_generated=False,
+                auto_generated=False,
+            )
+            db.add(post)
+            db.flush()
+
+            likes_count = fb_post.get("likes", {}).get("summary", {}).get("total_count", 0)
+            comments_count = fb_post.get("comments", {}).get("summary", {}).get("total_count", 0)
+            shares_count = fb_post.get("shares", {}).get("count", 0)
+
+            analytics_snapshot = models.AnalyticsSnapshot(
+                post_id=post.id,
+                likes_count=likes_count,
+                comments_count=comments_count,
+                shares_count=shares_count,
+                snapshot_at=posted_at,
+            )
+            db.add(analytics_snapshot)
+
+            post_engagement = models.PostEngagementSnapshot(
+                post_id=post.id,
+                page_connection_id=connection.id,
+                snapshot_taken_at=posted_at,
+                snapshot_type="facebook",
+                likes_count=likes_count,
+                comments_count=comments_count,
+                shares_count=shares_count,
+                reach_count=likes_count * 3,
+                engagement_score=likes_count + comments_count * 2 + shares_count * 5,
+            )
+            db.add(post_engagement)
+            synced_count += 1
+
+        db.commit()
+        return synced_count
+    except Exception as exc:
+        logger.warning("Error during Facebook history sync for page %s: %s", page_id, exc)
+        return 0
+
+
+async def select_page_for_user(db: Session, user_id: int, page_id: str) -> models.FacebookConnection:
     pending = db.get(models.PendingFacebookOAuth, user_id)
     if not pending:
         _facebook_error("Connect Facebook before selecting a page")
@@ -642,4 +881,55 @@ def select_page_for_user(db: Session, user_id: int, page_id: str) -> models.Face
 
     db.delete(pending)
     db.commit()
+
+    # Auto-ingest post history asynchronously
+    try:
+        await sync_facebook_page_posts_internal(db, user_id, connection)
+    except Exception as e:
+        logger.warning("Auto history sync failed on page connect: %s", e)
+
     return connection
+
+
+async def batch_connect_pages_for_user(
+    db: Session,
+    user_id: int,
+    page_ids: list[str],
+) -> list[str]:
+    pending = db.get(models.PendingFacebookOAuth, user_id)
+    if not pending:
+        _facebook_error("Connect Facebook before selecting pages")
+
+    if pending.expires_at <= datetime.now(timezone.utc):
+        db.delete(pending)
+        db.commit()
+        _facebook_error("Facebook page selection expired. Please connect again.")
+
+    connected_names: list[str] = []
+    connected_objects: list[models.FacebookConnection] = []
+    for pid in page_ids:
+        selected_page = next((page for page in (pending.pages or []) if page.get("page_id") == pid), None)
+        if not selected_page:
+            continue
+        try:
+            conn = save_or_update_page_connection(
+                db,
+                user_id,
+                selected_page,
+                pending.token_expires_at,
+            )
+            connected_names.append(conn.page_name)
+            connected_objects.append(conn)
+        except Exception as exc:
+            logger.warning("Failed to connect page %s: %s", pid, exc)
+
+    db.commit()
+
+    # Auto-ingest post history for newly connected pages
+    for conn in connected_objects:
+        try:
+            await sync_facebook_page_posts_internal(db, user_id, conn)
+        except Exception as e:
+            logger.warning("Auto history sync failed for page %s: %s", conn.page_name, e)
+
+    return connected_names

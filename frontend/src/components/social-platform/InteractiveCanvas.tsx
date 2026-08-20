@@ -277,18 +277,22 @@ const ElementText = ({ element, isSelected, onSelect, onChange }: any) => {
         }}
         onTransformEnd={(e) => {
           const node = shapeRef.current;
+          if (!node) return;
           const scaleX = node.scaleX();
           const scaleY = node.scaleY();
+          const newWidth = Math.max(20, Math.round(node.width() * scaleX));
+          const newHeight = Math.max(10, Math.round(node.height() * scaleY));
+          const newFontSize = Math.max(10, Math.round((element.font_size || 24) * scaleY));
           node.scaleX(1);
           node.scaleY(1);
           onChange({
             ...element,
-            x: node.x(),
-            y: node.y(),
-            w: Math.max(5, node.width() * scaleX),
-            h: Math.max(5, node.height() * scaleY),
-            font_size: (element.font_size || 24) * scaleY,
-            rotation: node.rotation(),
+            x: Math.round(node.x()),
+            y: Math.round(node.y()),
+            w: newWidth,
+            h: newHeight,
+            font_size: newFontSize,
+            rotation: Math.round(node.rotation()),
           });
         }}
       />
@@ -370,8 +374,25 @@ const ElementShape = ({ element, isSelected, onSelect, onChange, accentColor }: 
 };
 
 export const InteractiveCanvas = ({ trace, onUpdateElement, onSelectElement, selectedElementIndex }: InteractiveCanvasProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(420);
   const [selectedId, selectShape] = useState<number | null>(null);
   const [installedFonts, setInstalledFonts] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const updateSize = () => {
+      if (containerRef.current) {
+        const measured = containerRef.current.offsetWidth;
+        if (measured > 50) {
+          setContainerWidth(Math.min(540, measured - 32));
+        }
+      }
+    };
+    updateSize();
+    window.addEventListener('resize', updateSize);
+    return () => window.removeEventListener('resize', updateSize);
+  }, []);
 
   useEffect(() => {
     axiosInstance.get('/api/fonts').then((res) => {
@@ -403,13 +424,17 @@ export const InteractiveCanvas = ({ trace, onUpdateElement, onSelectElement, sel
   const palette = trace.palette || {};
   const accentColor = palette.accent_color || palette.accent || '#0D9488';
 
-  const elements = [...(trace.resolved_assets || [])].sort((a, b) => (a.z_index || 1) - (b.z_index || 1));
-  const scale = 420 / canvasW;
+  const indexedElements = (trace.resolved_assets || []).map((el: any, originalIndex: number) => ({
+    ...el,
+    _originalIndex: originalIndex,
+  })).sort((a: any, b: any) => (a.z_index || 1) - (b.z_index || 1));
+
+  const scale = Math.max(0.2, containerWidth / canvasW);
 
   const activeElement = selectedId !== null && trace.resolved_assets ? trace.resolved_assets[selectedId] : null;
 
   return (
-    <div className="flex flex-col items-center gap-4 w-full">
+    <div ref={containerRef} className="flex flex-col items-center gap-4 w-full">
       {/* Canvas Stage Frame */}
       <Stage
         width={canvasW * scale}
@@ -426,8 +451,8 @@ export const InteractiveCanvas = ({ trace, onUpdateElement, onSelectElement, sel
         }}
       >
         <Layer>
-          {elements.map((el, i) => {
-            const originalIndex = trace.resolved_assets.indexOf(el);
+          {indexedElements.map((el: any, i: number) => {
+            const originalIndex = el._originalIndex;
             const isSelected = originalIndex === selectedId;
             const role = (el.role || '').toLowerCase();
             const slot = (el.slot || '').toLowerCase();
@@ -453,29 +478,18 @@ export const InteractiveCanvas = ({ trace, onUpdateElement, onSelectElement, sel
                   accentColor={accentColor}
                 />
               );
-            } else if (el.type === 'text') {
-              if (role === 'cta' || role === 'button' || slot === 'cta_text') {
-                return (
-                  <ElementButton
-                    key={i}
-                    element={el}
-                    isSelected={isSelected}
-                    onSelect={() => handleSelect(originalIndex)}
-                    onChange={(newAttrs: any) => onUpdateElement(originalIndex, newAttrs)}
-                    accentColor={accentColor}
-                  />
-                );
-              }
+            } else if (el.type === 'button') {
               return (
-                <ElementText
+                <ElementButton
                   key={i}
                   element={el}
                   isSelected={isSelected}
                   onSelect={() => handleSelect(originalIndex)}
                   onChange={(newAttrs: any) => onUpdateElement(originalIndex, newAttrs)}
+                  accentColor={accentColor}
                 />
               );
-            } else if (el.type === 'shape') {
+            } else if (el.type === 'shape' || role === 'shape_accent' || role === 'badge_container' || slot === 'badge_container') {
               return (
                 <ElementShape
                   key={i}
@@ -487,7 +501,6 @@ export const InteractiveCanvas = ({ trace, onUpdateElement, onSelectElement, sel
                 />
               );
             }
-            return null;
           })}
         </Layer>
       </Stage>

@@ -5,14 +5,14 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class UserCreate(BaseModel):
-    email: str
-    password: str
-    name: str
+    email: str = Field(..., min_length=3, max_length=255, description="User email address")
+    password: str = Field(..., min_length=8, max_length=128, description="User password (min 8 chars)")
+    name: str = Field(..., min_length=1, max_length=100, description="User display name")
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class UserRead(BaseModel):
@@ -66,6 +66,26 @@ class FacebookSelectPageRequest(BaseModel):
 class FacebookSelectPageResponse(BaseModel):
     success: bool
     page_name: str
+
+
+class FacebookSelectMultiplePagesRequest(BaseModel):
+    page_ids: list[str]
+
+
+class FacebookSelectMultiplePagesResponse(BaseModel):
+    success: bool
+    connected_pages: list[str]
+
+
+class FacebookPendingPage(BaseModel):
+    page_id: str
+    page_name: str
+    picture_url: str | None = None
+    is_already_connected: bool = False
+
+
+class FacebookPendingPagesResponse(BaseModel):
+    pages: list[FacebookPendingPage]
 
 
 class FacebookManualConnectRequest(BaseModel):

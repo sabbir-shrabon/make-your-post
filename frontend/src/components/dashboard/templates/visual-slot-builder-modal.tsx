@@ -168,11 +168,11 @@ export function VisualSlotBuilderModal({ isOpen, onClose, onSaved }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between border-b px-6 py-4 bg-slate-50/80">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-xl font-bold leading-6 text-slate-900 flex items-center gap-2">
               <Sparkles className="size-5 text-purple-600" />
               Visual Canvas Template Builder
             </h2>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs font-normal leading-4 text-slate-500 mt-1">
               Construct reusable poster slot architectures with exact coordinate control.
             </p>
           </div>

@@ -35,20 +35,6 @@ logger = logging.getLogger(__name__)
 
 
 _VISION_SYSTEM_INSTRUCTION = (
-    "You are an image layout analyst. Analyze this image and return ONLY a JSON object with no explanation, "
-    "no markdown, no backticks. The JSON must have these exact keys: canvas_width (int), canvas_height (int), "
-    "aspect_ratio (string like '1:1' or '4:5'), background_type (one of: solid_color, gradient, photo, illustration), "
-    "background_color_hex (string or null), background_description (string describing what to generate if it is a photo "
-    "or illustration), layers (array of layer objects). Each layer object must have: type (one of: background_image, "
-    "subject_image, text, logo, overlay), position_x_percent (float 0-100, left edge), position_y_percent (float 0-100, "
-    "top edge), width_percent (float 0-100), height_percent (float 0-100), content (string — for text layers write the "
-    "actual text, for image layers describe what the image shows), font_size_percent (float, only for text layers — font "
-    "size as percent of canvas height), font_weight (string, only for text layers: bold/regular/light), text_color_hex "
-    "(string, only for text layers), text_align (string, only for text layers: left/center/right), z_index (int, draw "
-    "order starting from 0). Return only the raw JSON."
-)
-
-_VISION_SYSTEM_INSTRUCTION = (
     "Analyze this image and return only a raw JSON object with these exact keys: canvas_width (int), "
     "canvas_height (int), aspect_ratio (string like 1:1 or 4:5 or 9:16), background_type (one of: "
     "solid_color, gradient, photo, illustration), background_color_hex (string or null), "
@@ -89,7 +75,7 @@ def _parse_json_with_fallback(response_text: str, *, base64_image: str, model_na
                 system_prompt="Return only valid raw JSON.",
                 model_name=model_name,
                 provider_name="gemini",
-                api_key="",
+                api_key=GEMINI_API_KEY or "",
                 temperature=0.0,
                 max_tokens=4096,
                 images=[base64_image],
@@ -2512,7 +2498,8 @@ def debug_template(
     x_cron_secret: str | None = Header(default=None, convert_underscores=False),
     db: Session = Depends(get_db),
 ):
-    if not x_cron_secret or x_cron_secret != CRON_SECRET:
+    import secrets
+    if not x_cron_secret or not secrets.compare_digest(x_cron_secret, CRON_SECRET):
         raise HTTPException(status_code=401, detail="Unauthorized")
     assignment = db.query(models.PersonaImageTemplateAssignment).filter(
         models.PersonaImageTemplateAssignment.persona_id == persona_id

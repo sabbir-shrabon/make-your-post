@@ -17,8 +17,8 @@ export default function FacebookSetupGuidePage() {
       <div className="mx-auto grid max-w-3xl gap-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">Facebook OAuth Setup Guide</h1>
-            <p className="text-sm text-slate-500">Private platform-owner checklist.</p>
+            <h1 className="text-xl font-bold leading-6">Facebook OAuth Setup Guide</h1>
+            <p className="text-xs font-normal leading-4 text-slate-500 mt-1">Private platform-owner checklist.</p>
           </div>
           <Button asChild variant="outline"><Link href="/dashboard/settings">Back</Link></Button>
         </div>

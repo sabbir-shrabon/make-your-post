@@ -1,18 +1,14 @@
 "use client"
 
-import { useApp } from "@/contexts/app-context"
-import { useAuth } from "@/contexts/auth-context"
-import { HomeView } from "@/components/dashboard/views/home-view"
-import { Loader2 } from "lucide-react"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 
 export default function DashboardPage() {
-  const { pages, isInitialLoading, refreshPages } = useApp()
-  const { user } = useAuth()
-  const timezone = user?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+  const router = useRouter()
 
-  if (isInitialLoading) {
-    return <div className="flex justify-center py-16"><Loader2 className="size-6 animate-spin text-slate-400" /></div>
-  }
+  useEffect(() => {
+    router.replace("/dashboard/create")
+  }, [router])
 
-  return <HomeView pages={pages} posts={[]} onConnected={refreshPages} timezone={timezone} />
+  return null
 }

@@ -92,10 +92,10 @@ export const goalOptions = ["Educate my audience", "Sell a product or service", 
 export function PageTitle({ title, subtitle, aiPowered }: { title: string; subtitle: string; aiPowered?: boolean }) {
   return (
     <div>
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
+      <h1 className="text-xl font-bold leading-6 flex items-center gap-2 text-slate-900">
         {title} {aiPowered ? <Sparkles className="size-5 text-purple-600" /> : null}
       </h1>
-      <p className="text-sm text-slate-500">{subtitle}</p>
+      <p className="text-xs font-normal leading-4 text-slate-500 mt-1">{subtitle}</p>
     </div>
   )
 }
@@ -129,6 +129,39 @@ export function PageStatusBadge({ status }: { status: string }) {
 export function formatDate(value: string | null, timezone: string) {
   if (!value) return "Not scheduled"
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(value))
+}
+
+export function formatRelativeTime(dateString: string | null, timezone?: string): string {
+  if (!dateString) return "Just now"
+  try {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+    if (diffInSeconds < 60) return "Just now"
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h`
+    if (diffInSeconds < 172800) {
+      const timeStr = new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "numeric",
+        timeZone: timezone || "UTC",
+      }).format(date)
+      return `Yesterday at ${timeStr}`
+    }
+    if (diffInSeconds < 604800) {
+      return `${Math.floor(diffInSeconds / 86400)}d`
+    }
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      timeZone: timezone || "UTC",
+    }).format(date)
+  } catch {
+    return dateString
+  }
 }
 
 export function todayLabel(timezone: string) {
@@ -182,7 +215,19 @@ export function ConnectEmpty({ onConnected }: { onConnected: () => void }) {
   )
 }
 
-export function FacebookConnectButton({ onConnected, className, urgent }: { onConnected: () => void; className?: string; urgent?: boolean }) {
+export function FacebookConnectButton({
+  onConnected,
+  onRequiresSelection,
+  className,
+  urgent,
+  label = "Connect Facebook",
+}: {
+  onConnected: () => void
+  onRequiresSelection?: (pages: any[]) => void
+  className?: string
+  urgent?: boolean
+  label?: string
+}) {
   const [busy, setBusy] = React.useState(false)
   const connectionSucceededRef = React.useRef(false)
   const popupCheckerRef = React.useRef<number | null>(null)
@@ -210,31 +255,46 @@ export function FacebookConnectButton({ onConnected, className, urgent }: { onCo
 
       popupCheckerRef.current = window.setInterval(async () => {
         try {
-          const res = await fetch(`${API_BASE_URL}/auth/facebook/status?session_id=${sessionId}`)
-          if (res.ok) {
-            const data = await res.json()
-            if (data.status === "success") {
-              connectionSucceededRef.current = true
-              if (popupCheckerRef.current !== null) {
-                window.clearInterval(popupCheckerRef.current)
-                popupCheckerRef.current = null
-              }
-              if (!popup.closed) popup.close()
-              setBusy(false)
-              onConnected()
-              toast.success("Facebook Page connected successfully")
-              return
-            } else if (data.status === "error") {
-              connectionSucceededRef.current = true
-              if (popupCheckerRef.current !== null) {
-                window.clearInterval(popupCheckerRef.current)
-                popupCheckerRef.current = null
-              }
-              if (!popup.closed) popup.close()
-              setBusy(false)
-              toast.error(data.message || "Connection failed.")
-              return
+          const res = await api.get<{ status: string; pages?: any[]; pageId?: string; pageName?: string; message?: string }>(
+            `/auth/facebook/status?session_id=${sessionId}`
+          )
+          const data = res.data
+          if (data.status === "success") {
+            connectionSucceededRef.current = true
+            if (popupCheckerRef.current !== null) {
+              window.clearInterval(popupCheckerRef.current)
+              popupCheckerRef.current = null
             }
+            if (!popup.closed) popup.close()
+            setBusy(false)
+            onConnected()
+            toast.success("Facebook Page connected successfully")
+            return
+          } else if (data.status === "requires_selection") {
+            connectionSucceededRef.current = true
+            if (popupCheckerRef.current !== null) {
+              window.clearInterval(popupCheckerRef.current)
+              popupCheckerRef.current = null
+            }
+            if (!popup.closed) popup.close()
+            setBusy(false)
+            if (onRequiresSelection && data.pages) {
+              onRequiresSelection(data.pages)
+            } else {
+              onConnected()
+            }
+            toast.info("Multiple pages discovered. Choose which to connect.")
+            return
+          } else if (data.status === "error") {
+            connectionSucceededRef.current = true
+            if (popupCheckerRef.current !== null) {
+              window.clearInterval(popupCheckerRef.current)
+              popupCheckerRef.current = null
+            }
+            if (!popup.closed) popup.close()
+            setBusy(false)
+            toast.error(data.message || "Connection failed.")
+            return
           }
         } catch (err) {
           // ignore network errors during polling
@@ -247,17 +307,13 @@ export function FacebookConnectButton({ onConnected, className, urgent }: { onCo
           }
           setBusy(false)
           if (!connectionSucceededRef.current) {
-            toast.info("Connection cancelled")
+            toast.info("Connection window closed")
           }
         }
       }, 1000)
-    } catch {
-      if (popupCheckerRef.current !== null) {
-        window.clearInterval(popupCheckerRef.current)
-        popupCheckerRef.current = null
-      }
-      toast.error("Could not open the Facebook connection window.")
+    } catch (err: any) {
       setBusy(false)
+      toast.error(err.message || "Could not launch Facebook connection")
     }
   }
 
@@ -277,7 +333,14 @@ export function FacebookConnectButton({ onConnected, className, urgent }: { onCo
 }
 export function Stat({ label, value, tone = "blue" }: { label: string; value: number | string; tone?: "blue" | "green" | "amber" | "red" }) {
   const colors = { blue: "text-blue-700", green: "text-green-700", amber: "text-amber-700", red: "text-red-700" }
-  return <Card><CardContent className="p-6"><p className="text-sm text-slate-500">{label}</p><p className={cn("mt-2 text-3xl font-semibold", colors[tone])}>{value}</p></CardContent></Card>
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <p className="text-xs font-normal leading-4 text-slate-500">{label}</p>
+        <p className={cn("mt-2 text-xl font-bold leading-6", colors[tone])}>{value}</p>
+      </CardContent>
+    </Card>
+  )
 }
 
 export function badgeClass(status: string) {
@@ -336,6 +399,8 @@ export function PageConnectionCard({
   onChanged,
   onSyncHistory,
   onDisconnect,
+  onReconnect,
+  onDelete,
   isSyncing,
   showDashboardActions,
 }: {
@@ -343,6 +408,8 @@ export function PageConnectionCard({
   onChanged: () => void
   onSyncHistory?: () => void
   onDisconnect?: () => void
+  onReconnect?: () => void
+  onDelete?: () => void
   isSyncing?: boolean
   showDashboardActions?: boolean
 }) {
@@ -351,7 +418,7 @@ export function PageConnectionCard({
   const pausedCount = page.paused_post_count ?? 0
 
   return (
-    <Card>
+    <Card className="border-slate-200">
       <CardContent className="grid gap-4 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
@@ -361,20 +428,21 @@ export function PageConnectionCard({
           <div className="flex flex-wrap gap-2">
             {status === "connected" && showDashboardActions ? (
               <>
-                <Button asChild variant="outline"><Link href="/dashboard/create">Create Post</Link></Button>
-                <Button asChild variant="outline"><Link href="/dashboard/published">View Posts</Link></Button>
-                {onDisconnect ? <Button variant="destructive" onClick={onDisconnect}>Disconnect</Button> : null}
+                <Button asChild variant="outline" size="sm"><Link href="/dashboard/create">Create Post</Link></Button>
+                <Button asChild variant="outline" size="sm"><Link href="/dashboard/published">View Posts</Link></Button>
+                {onDisconnect ? <Button variant="destructive" size="sm" onClick={onDisconnect}>Disconnect</Button> : null}
               </>
             ) : null}
             {status === "connected" && !showDashboardActions ? (
               <>
                 {onSyncHistory ? (
-                  <Button variant="outline" disabled={isSyncing} onClick={onSyncHistory}>
+                  <Button variant="outline" size="sm" disabled={isSyncing} onClick={onSyncHistory}>
                     {isSyncing ? "Syncing..." : "Sync History"}
                   </Button>
                 ) : null}
                 <Button
                   variant="outline"
+                  size="sm"
                   disabled={isSyncing}
                   onClick={async () => {
                     await api.post(`/facebook/pages/${page.id}/refresh-token`)
@@ -385,8 +453,27 @@ export function PageConnectionCard({
                   Refresh Token
                 </Button>
                 {onDisconnect ? (
-                  <Button variant="destructive" disabled={isSyncing} onClick={onDisconnect}>
+                  <Button variant="outline" size="sm" className="text-amber-700 hover:text-amber-800 hover:bg-amber-50" disabled={isSyncing} onClick={onDisconnect}>
                     Disconnect
+                  </Button>
+                ) : null}
+                {onDelete ? (
+                  <Button variant="destructive" size="sm" disabled={isSyncing} onClick={onDelete}>
+                    Remove
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+            {status !== "connected" ? (
+              <>
+                {onReconnect ? (
+                  <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white text-xs" onClick={onReconnect}>
+                    Reconnect Page
+                  </Button>
+                ) : null}
+                {onDelete ? (
+                  <Button variant="outline" size="sm" className="text-rose-600 hover:bg-rose-50 text-xs" onClick={onDelete}>
+                    Remove
                   </Button>
                 ) : null}
               </>
@@ -405,15 +492,15 @@ export function PageConnectionCard({
           <div className="grid gap-1 text-sm text-slate-600">
             <p>{postCount} posts saved • Your post history is preserved</p>
             {pausedCount > 0 ? (
-              <p className="text-amber-700">
-                {pausedCount} scheduled posts are paused. They will resume when you reconnect.
+              <p className="text-amber-700 font-medium">
+                {pausedCount} scheduled posts are paused. Reconnect to resume posting.
               </p>
             ) : null}
           </div>
         ) : null}
 
         {status === "needs-reconnection" ? (
-          <p className="text-sm text-amber-700">Please reconnect to resume posting.</p>
+          <p className="text-sm text-amber-700 font-medium">Please reconnect to resume automated publishing.</p>
         ) : null}
       </CardContent>
     </Card>

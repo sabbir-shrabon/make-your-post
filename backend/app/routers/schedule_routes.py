@@ -209,10 +209,18 @@ def get_dashboard(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    user_tz = current_user.timezone or "Asia/Dhaka"
-    now_utc = datetime.now(timezone.utc)
-    today_start = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = now_utc.replace(hour=23, minute=59, second=59, microsecond=999999)
+    from datetime import timedelta
+    user_tz_name = current_user.timezone or "Asia/Dhaka"
+    try:
+        user_tz = ZoneInfo(user_tz_name)
+    except Exception:
+        user_tz = ZoneInfo("UTC")
+
+    now_local = datetime.now(timezone.utc).astimezone(user_tz)
+    start_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_local = start_local + timedelta(days=1)
+    today_start = start_local.astimezone(timezone.utc)
+    today_end = end_local.astimezone(timezone.utc)
 
     todays_slots = (
         db.query(models.ScheduledSlot)

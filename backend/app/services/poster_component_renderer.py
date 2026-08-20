@@ -60,13 +60,15 @@ def _get_font(font_name: str, size: int, bold: bool = True) -> ImageFont.ImageFo
                     except Exception:
                         pass
 
-    for p in candidates:
-        if os.path.exists(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except Exception:
-                continue
-
+def _get_font(font_name: str, size: int, bold: bool = False) -> ImageFont.ImageFont:
+    """Load TTF from backend/assets/fonts/ or fallback to system Arial."""
+    font_file = f"{font_name.replace(' ', '')}-{'Bold' if bold else 'Regular'}.ttf"
+    font_path = os.path.join(FONTS_DIR, font_file)
+    if os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except Exception:
+            pass
     try:
         return ImageFont.truetype("arial.ttf", size)
     except Exception:
@@ -74,7 +76,7 @@ def _get_font(font_name: str, size: int, bold: bool = True) -> ImageFont.ImageFo
 
 
 def _fetch_image(image_source: str, target_w: int, target_h: int) -> Image.Image:
-    """Fetch image from HTTP, data URL, or local path and scale cleanly."""
+    """Fetch image from safe HTTP URL or data URL and scale cleanly."""
     img: Optional[Image.Image] = None
     try:
         if not image_source:
@@ -83,7 +85,7 @@ def _fetch_image(image_source: str, target_w: int, target_h: int) -> Image.Image
             _, b64 = image_source.split(",", 1)
             raw = base64.b64decode(b64)
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
-        elif image_source.startswith("http://") or image_source.startswith("https://"):
+        elif (image_source.startswith("http://") or image_source.startswith("https://")) and is_safe_public_url(image_source):
             req = urllib.request.Request(image_source, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=6) as resp:
                 raw = resp.read()
@@ -114,41 +116,41 @@ def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int, draw: Image
     if not text:
         return []
     words = text.split()
-    if not words:
-        return []
     lines = []
     current_line = []
+
     for word in words:
         test_line = " ".join(current_line + [word])
         bbox = draw.textbbox((0, 0), test_line, font=font)
-        if (bbox[2] - bbox[0]) <= max_width:
+        if bbox[2] - bbox[0] <= max_width:
             current_line.append(word)
         else:
             if current_line:
                 lines.append(" ".join(current_line))
             current_line = [word]
+
     if current_line:
         lines.append(" ".join(current_line))
+
     return lines
 
 
-def _create_gradient_scrim(w: int, h: int, direction: str = "bottom", max_opacity: float = 0.85) -> Image.Image:
-    """Creates a smooth, non-muddy directional gradient scrim."""
+def _draw_bottom_gradient_overlay(w: int, h: int, base_alpha: int = 180) -> Image.Image:
+    """
+    Creates a full-width vertical gradient darkening toward the bottom,
+    giving maximum contrast for headlines.
+    """
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     pixels = overlay.load()
-    base_alpha = int(max_opacity * 255)
+    split_y = int(h * 0.45)
 
     for y in range(h):
-        t = y / max(1, h - 1)
-        if direction == "bottom":
-            # Smooth cubic ease-in fade
-            factor = t ** 1.8
-            alpha = int(base_alpha * factor)
-        elif direction == "top":
-            factor = (1.0 - t) ** 1.8
-            alpha = int(base_alpha * factor)
+        if y < split_y:
+            alpha = int(base_alpha * (y / split_y) * 0.4)
         else:
-            alpha = int(base_alpha * 0.5)
+            progress = (y - split_y) / (h - split_y)
+            alpha = int(base_alpha * 0.4 + (base_alpha * 0.6 * progress))
+        alpha = min(230, max(0, alpha))
 
         for x in range(w):
             pixels[x, y] = (15, 18, 25, alpha)
@@ -159,7 +161,7 @@ def _create_gradient_scrim(w: int, h: int, direction: str = "bottom", max_opacit
 def _render_avatar(avatar_url: Optional[str], brand_name: str, size: int = 64) -> Image.Image:
     """Render circular brand avatar or styled initial."""
     avatar_img = None
-    if avatar_url:
+    if avatar_url and is_safe_public_url(avatar_url):
         try:
             req = urllib.request.Request(avatar_url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=5) as resp:

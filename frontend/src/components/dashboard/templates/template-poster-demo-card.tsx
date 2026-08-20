@@ -17,7 +17,8 @@ import {
   Copy,
   Info,
   Maximize2,
-  BookmarkPlus
+  BookmarkPlus,
+  Pencil
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -67,6 +68,7 @@ export interface PosterTemplateItem {
 interface Props {
   template: PosterTemplateItem
   onUseInLab?: (template: PosterTemplateItem) => void
+  onEdit?: (template: PosterTemplateItem) => void
   onDelete?: (template: PosterTemplateItem) => void
   onExport?: (template: PosterTemplateItem) => void
 }
@@ -74,6 +76,7 @@ interface Props {
 export function TemplatePosterDemoCard({
   template,
   onUseInLab,
+  onEdit,
   onDelete,
   onExport,
 }: Props) {
@@ -352,10 +355,10 @@ export function TemplatePosterDemoCard({
         <div>
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5 group-hover:text-purple-700 transition-colors">
+              <h3 className="font-semibold text-slate-900 text-base leading-5 flex items-center gap-1.5 group-hover:text-purple-700 transition-colors">
                 {template.name}
               </h3>
-              <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">
+              <p className="text-xs font-normal leading-4 text-slate-500 line-clamp-2 mt-0.5">
                 {template.description || `Optimized for ${template.category}`}
               </p>
             </div>
@@ -394,6 +397,17 @@ export function TemplatePosterDemoCard({
             >
               <Download className="size-3.5" />
             </Button>
+            {!template.is_system && onEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs text-purple-700 hover:text-purple-900 hover:bg-purple-50 border-purple-200"
+                onClick={() => onEdit(template)}
+                title="Edit in Canvas Builder"
+              >
+                <Pencil className="size-3.5" />
+              </Button>
+            )}
             {!template.is_system && onDelete && (
               <Button
                 variant="ghost"

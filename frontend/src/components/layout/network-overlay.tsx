@@ -46,8 +46,8 @@ export function NetworkOverlay() {
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-red-100 mb-4">
             <ServerCrash className="size-6 text-red-600" />
           </div>
-          <h2 className="text-lg font-semibold text-slate-900 mb-2">Connection Timeout</h2>
-          <p className="text-sm text-slate-500 mb-6">
+          <h2 className="text-base font-semibold leading-5 text-slate-900 mb-2">Connection Timeout</h2>
+          <p className="text-xs font-normal leading-4 text-slate-500 mb-6">
             The background server took too long to respond. This occasionally happens if the free-tier instance needs extra time to boot up.
           </p>
           <Button 

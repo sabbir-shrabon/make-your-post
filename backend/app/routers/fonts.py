@@ -10,9 +10,11 @@ import json
 import logging
 import os
 import re
-import urllib.request
 import urllib.parse
+import urllib.request
+from pathlib import Path
 from typing import Optional
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -26,11 +28,35 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/fonts", tags=["fonts"])
 
-FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts")
-DESIGN_SYSTEM_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "design-system")
+FONTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts"))
+DESIGN_SYSTEM_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "design-system"))
 FONT_PAIRS_FILE = os.path.join(DESIGN_SYSTEM_DIR, "font-pairs.json")
 
+ALLOWED_FONT_EXTENSIONS = {".ttf", ".otf", ".woff", ".woff2"}
+
 os.makedirs(FONTS_DIR, exist_ok=True)
+
+
+def _get_safe_font_path(filename: str) -> Path | None:
+    """Validate and resolve font file path strictly inside FONTS_DIR."""
+    safe_name = Path(filename).name.strip()
+    if not safe_name:
+        return None
+    ext = Path(safe_name).suffix.lower()
+    if ext not in ALLOWED_FONT_EXTENSIONS:
+        return None
+
+    fonts_dir_path = Path(FONTS_DIR).resolve()
+    target = (fonts_dir_path / safe_name).resolve()
+    try:
+        if not target.is_relative_to(fonts_dir_path):
+            return None
+    except AttributeError:
+        # Fallback for Python < 3.9
+        if not str(target).startswith(str(fonts_dir_path)):
+            return None
+
+    return target
 
 
 class DownloadGoogleFontRequest(BaseModel):
@@ -39,9 +65,9 @@ class DownloadGoogleFontRequest(BaseModel):
 
 
 class AddCustomPairRequest(BaseModel):
-    id: str = Field(..., description="Unique pair ID")
-    heading_font: str = Field(..., description="Heading font name")
-    body_font: str = Field(..., description="Body font name")
+    id: str = Field(..., min_length=1, max_length=100, description="Unique pair ID")
+    heading_font: str = Field(..., min_length=1, max_length=100, description="Heading font name")
+    body_font: str = Field(..., min_length=1, max_length=100, description="Body font name")
     mood: list[str] = Field(default_factory=lambda: ["custom", "brand"])
 
 
@@ -89,12 +115,12 @@ def list_fonts():
 
 @router.get("/file/{filename}")
 def get_font_file(filename: str):
-    """Serve font binary for @font-face browser preview."""
-    target = os.path.join(FONTS_DIR, filename)
-    if os.path.exists(target):
-        ext = os.path.splitext(filename)[1].lower()
+    """Serve font binary safely strictly from FONTS_DIR."""
+    target = _get_safe_font_path(filename)
+    if target and target.is_file():
+        ext = target.suffix.lower()
         media_type = "font/ttf" if ext == ".ttf" else ("font/otf" if ext == ".otf" else "font/woff2")
-        return FileResponse(target, media_type=media_type)
+        return FileResponse(str(target), media_type=media_type)
     raise HTTPException(status_code=404, detail="Font file not found")
 
 
@@ -110,22 +136,25 @@ async def upload_custom_font(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in (".ttf", ".otf", ".woff", ".woff2"):
+    safe_original_name = Path(file.filename).name
+    ext = Path(safe_original_name).suffix.lower()
+    if ext not in ALLOWED_FONT_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail="Invalid font format. Only .ttf, .otf, .woff, and .woff2 are supported.",
         )
 
     # Sanitize filename
-    safe_name = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", file.filename)
-    target_path = os.path.join(FONTS_DIR, safe_name)
+    safe_name = re.sub(r"[^a-zA-Z0-9_\-\.]", "_", safe_original_name)
+    target = _get_safe_font_path(safe_name)
+    if not target:
+        raise HTTPException(status_code=400, detail="Invalid filename format.")
 
     content = await file.read()
-    with open(target_path, "wb") as f:
+    with open(target, "wb") as f:
         f.write(content)
 
-    font_family = os.path.splitext(safe_name)[0].split("-")[0]
+    font_family = safe_name.rsplit(".", 1)[0].split("-")[0]
 
     # Save to database record
     asset = models.FontAsset(
@@ -186,9 +215,11 @@ def download_google_font(
             font_bytes = bin_resp.read()
 
         safe_filename = f"{family.replace(' ', '')}-Bold.ttf"
-        save_path = os.path.join(FONTS_DIR, safe_filename)
+        target = _get_safe_font_path(safe_filename)
+        if not target:
+            raise ValueError("Invalid target font name.")
 
-        with open(save_path, "wb") as f:
+        with open(target, "wb") as f:
             f.write(font_bytes)
 
         # Save to database
@@ -216,9 +247,12 @@ def download_google_font(
 
 
 @router.post("/pairs")
-def add_custom_font_pair(body: AddCustomPairRequest):
+def add_custom_font_pair(
+    body: AddCustomPairRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     """
-    Register a new font pair in the design system.
+    Register a new font pair in the design system. Requires authentication.
     """
     pairs = _load_font_pairs()
     # Check if exists
@@ -238,15 +272,19 @@ def add_custom_font_pair(body: AddCustomPairRequest):
 
 
 @router.delete("/{filename}")
-def delete_custom_font(filename: str):
+def delete_custom_font(
+    filename: str,
+    current_user: models.User = Depends(get_current_user),
+):
     """
-    Remove an installed font file.
+    Remove an installed font file safely. Requires authentication.
     """
-    target = os.path.join(FONTS_DIR, filename)
-    if os.path.exists(target):
+    target = _get_safe_font_path(filename)
+    if target and target.is_file():
         try:
-            os.remove(target)
-            return {"status": "deleted", "filename": filename}
+            target.unlink()
+            return {"status": "deleted", "filename": target.name}
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to delete font: {e}")
+            logger.error("Failed to delete font %s: %s", target.name, e)
+            raise HTTPException(status_code=500, detail="Failed to delete font file.")
     raise HTTPException(status_code=404, detail="Font file not found")

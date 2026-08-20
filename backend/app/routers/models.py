@@ -156,7 +156,10 @@ def save_model_preference(
 
 
 @router.post("/test")
-async def test_provider(req: TestProviderRequest):
+async def test_provider(
+    req: TestProviderRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     provider = _normalize_provider(req.provider_name)
     model = _normalize_model(provider, req.model_name)
     if not platform_key_configured(provider):

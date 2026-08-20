@@ -235,7 +235,9 @@ async def regenerate_layer(
 
 
 @router.get("/archetypes")
-def list_archetypes():
+def list_archetypes(
+    current_user: models.User = Depends(get_current_user),
+):
     """
     Returns the list of 6 Canva-grade social poster archetypes.
     """
@@ -250,7 +252,10 @@ def list_archetypes():
 
 
 @router.post("/render-preview")
-def render_poster_preview(body: ReRenderArchetypeRequest):
+def render_poster_preview(
+    body: ReRenderArchetypeRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     """
     Fast sub-100ms live preview re-rendering of any Archetype without LLM invocation.
     """

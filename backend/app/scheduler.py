@@ -61,9 +61,9 @@ def setup_scheduler():
 
     sched.add_job(
         register_all_todays_slots,
-        CronTrigger(hour=0, minute=0, timezone="UTC"),
+        IntervalTrigger(minutes=30),
         id="register_daily_slots",
-        name="Register daily slots for all personas at midnight UTC",
+        name="Register daily slots for all personas periodically",
         replace_existing=True,
         max_instances=1,
     )

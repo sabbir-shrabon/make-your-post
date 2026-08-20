@@ -18,43 +18,40 @@ import urllib.request
 from typing import Optional, Literal
 from PIL import Image, ImageDraw, ImageFont
 
+from app.services.security_utils import is_safe_public_url
+
 logger = logging.getLogger(__name__)
 
-FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "design-system", "fonts")
+FONTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "fonts")
 
 
 def _get_font(font_name: str, size: int) -> ImageFont.ImageFont:
-    """Safely resolve font from design system or fallback to Arial / default."""
-    size = int(max(10, size))
-    possible_paths = [
-        os.path.join(FONTS_DIR, f"{font_name}.ttf"),
-        os.path.join(FONTS_DIR, f"{font_name}-Bold.ttf"),
-        os.path.join(FONTS_DIR, "Montserrat-Bold.ttf"),
-        os.path.join(FONTS_DIR, "Inter-Bold.ttf"),
-        "arial.ttf",
-        "impact.ttf",
-    ]
-    for p in possible_paths:
-        if os.path.exists(p):
-            try:
-                return ImageFont.truetype(p, size)
-            except Exception:
-                pass
+    """Load TTF from backend/assets/fonts/ or fallback to system Arial."""
+    font_file = f"{font_name.replace(' ', '')}-Bold.ttf"
+    font_path = os.path.join(FONTS_DIR, font_file)
+    if os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except Exception:
+            pass
     try:
         return ImageFont.truetype("arialbd.ttf", size)
     except Exception:
-        return ImageFont.load_default()
+        try:
+            return ImageFont.truetype("arial.ttf", size)
+        except Exception:
+            return ImageFont.load_default()
 
 
 def _fetch_image(image_source: str, canvas_w: int = 1080, canvas_h: int = 1080) -> Image.Image:
-    """Fetch image from HTTP URL, data URL, or local path and scale cleanly."""
+    """Fetch image from safe HTTP URL, data URL, or local path and scale cleanly."""
     img: Optional[Image.Image] = None
     try:
         if image_source.startswith("data:image/"):
             _, b64 = image_source.split(",", 1)
             raw = base64.b64decode(b64)
             img = Image.open(io.BytesIO(raw)).convert("RGBA")
-        elif image_source.startswith("http://") or image_source.startswith("https://"):
+        elif (image_source.startswith("http://") or image_source.startswith("https://")) and is_safe_public_url(image_source):
             req = urllib.request.Request(image_source, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=8) as resp:
                 raw = resp.read()
@@ -181,7 +178,7 @@ def render_modern_card_meme(
     # 1. Avatar & Brand Header
     avatar_size = 64
     avatar_img = None
-    if avatar_url:
+    if avatar_url and is_safe_public_url(avatar_url):
         try:
             req = urllib.request.Request(avatar_url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=5) as resp:

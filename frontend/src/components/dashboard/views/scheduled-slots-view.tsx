@@ -36,6 +36,7 @@ import {
   slotStatusClass,
   Empty,
 } from "@/components/dashboard/shared/dashboard-ui"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -168,10 +169,11 @@ export function ScheduledSlotsView({
 
   return (
     <div className="grid gap-6">
+
       {/* Top Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <PageTitle
-          title="Content Calendar & Schedule"
+          title="Scheduled Posts & Calendar"
           subtitle="Plan, visualize, and batch-schedule your Facebook campaigns across days."
         />
         <div className="flex items-center gap-2">
@@ -375,7 +377,7 @@ export function ScheduledSlotsView({
                     <Sparkles className="size-4" />
                   </div>
                   <div>
-                    <CardTitle className="text-base font-bold text-slate-900">
+                    <CardTitle className="text-base font-semibold leading-5 text-slate-900">
                       Multi-Day Campaign Batch Planner
                     </CardTitle>
                     <CardDescription className="text-xs">
